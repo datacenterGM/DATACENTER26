@@ -1191,6 +1191,11 @@
               <input type="file" id="fileInputJson" accept=".json,application/json">
               📥 Load Backup JSON
             </label>
+            <label class="menu-item" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="autoBackupJsonToggle" onclick="setAutoBackupJsonEnabled(this.checked)" style="width:auto;">
+              <span>🔁 Auto Save Backup JSON</span>
+            </label>
+            <div class="menu-files" id="autoBackupJsonStatus" style="font-size:0.72rem;color:var(--muted);margin:0 0 4px 4px;"></div>
             <div class="menu-divider"></div>
             <div class="menu-files" id="backupFolderRow" style="font-size:0.72rem;">
               <div style="margin-bottom:4px;color:var(--muted);">Backup otomatis ke folder laptop:</div>
@@ -1480,11 +1485,14 @@
 
       <div class="search-bar show" id="cekSearchBar" style="display:flex;">
         <input type="text" id="cekSearchInput" placeholder="Cari No Faktur, customer, sales..." autocomplete="off">
+        <select id="cekFilterBulan">
+          <option value="all">Semua Bulan</option>
+        </select>
         <select id="cekFilterStatus">
           <option value="all">Semua Status</option>
           <option value="lunas">Lunas</option>
           <option value="belum_jt">Belum Jatuh Tempo</option>
-          <option value="overdue">Overdue</option>
+          <option value="overdue">Sudah Jatuh Tempo</option>
           <option value="titip">Titip / Sebagian</option>
         </select>
         <button class="btn" onclick="renderCekTable()">Cari</button>
@@ -1695,6 +1703,8 @@
       _syncTimer = setTimeout(() => {
         if (supabaseClient) pushToSupabase();
         if (backupDirHandle) writeLocalBackup();
+        autoBackupJsonDirty = true;
+        maybeAutoBackupJson();
       }, 800);
     }
 
@@ -3231,6 +3241,82 @@
       }, 500);
     }
 
+    // ---- Auto Save Backup JSON ----
+    // Backup manual (saveBackupJson) menghasilkan file terpisah tiap kali diklik.
+    // Untuk mode "auto" ini, file di-download otomatis secara berkala (bukan tiap
+    // perubahan kecil) supaya folder Download tidak kebanjiran file setiap detik.
+    const AUTO_BACKUP_JSON_KEY = 'autoBackupJsonEnabled';
+    const AUTO_BACKUP_LAST_SLOT_KEY = 'autoBackupJsonLastSlot';
+    // Jendela waktu auto-backup: setiap 30 menit, mulai 14:30 s/d 16:30 WIB saja
+    const AUTO_BACKUP_WINDOW_START_MIN = 14 * 60 + 30; // 14:30
+    const AUTO_BACKUP_WINDOW_END_MIN = 16 * 60 + 30;   // 16:30
+    const AUTO_BACKUP_STEP_MIN = 30;
+    let autoBackupJsonEnabled = localStorage.getItem(AUTO_BACKUP_JSON_KEY) === '1';
+    let autoBackupJsonDirty = false;
+    let lastAutoBackupSlotKey = localStorage.getItem(AUTO_BACKUP_LAST_SLOT_KEY) || '';
+
+    function setAutoBackupJsonStatus(msg) {
+      const el = document.getElementById('autoBackupJsonStatus');
+      if (el) el.textContent = msg || '';
+    }
+
+    // Waktu sekarang di WIB (UTC+7, tanpa DST), tidak bergantung timezone perangkat
+    function getWIBTimeParts() {
+      const now = new Date();
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const wib = new Date(utcMs + 7 * 60 * 60000);
+      return {
+        hour: wib.getUTCHours(),
+        minute: wib.getUTCMinutes(),
+        dateStr: wib.getUTCFullYear() + '-' + String(wib.getUTCMonth() + 1).padStart(2, '0') + '-' + String(wib.getUTCDate()).padStart(2, '0')
+      };
+    }
+
+    function setAutoBackupJsonEnabled(val) {
+      autoBackupJsonEnabled = !!val;
+      localStorage.setItem(AUTO_BACKUP_JSON_KEY, autoBackupJsonEnabled ? '1' : '0');
+      const cb = document.getElementById('autoBackupJsonToggle');
+      if (cb) cb.checked = autoBackupJsonEnabled;
+      if (autoBackupJsonEnabled) {
+        setAutoBackupJsonStatus('Aktif — backup JSON otomatis tiap 30 menit, jam 14.30–16.30 WIB.');
+        autoBackupJsonDirty = true;
+        maybeAutoBackupJson();
+      } else {
+        setAutoBackupJsonStatus('');
+      }
+    }
+
+    function maybeAutoBackupJson() {
+      if (!autoBackupJsonEnabled) return;
+      const hasData = (allRows && allRows.length) || (salesRows && salesRows.length);
+      if (!hasData || !autoBackupJsonDirty) return;
+
+      const { hour, minute, dateStr } = getWIBTimeParts();
+      const minutesOfDay = hour * 60 + minute;
+      if (minutesOfDay < AUTO_BACKUP_WINDOW_START_MIN || minutesOfDay > AUTO_BACKUP_WINDOW_END_MIN) {
+        return; // di luar jam 14.30–16.30 WIB, tunggu jendela berikutnya
+      }
+      const slotIndex = Math.floor((minutesOfDay - AUTO_BACKUP_WINDOW_START_MIN) / AUTO_BACKUP_STEP_MIN);
+      const slotKey = dateStr + '-slot' + slotIndex;
+      if (slotKey === lastAutoBackupSlotKey) return; // slot 30 menit ini sudah pernah backup
+
+      saveBackupJson();
+      autoBackupJsonDirty = false;
+      lastAutoBackupSlotKey = slotKey;
+      localStorage.setItem(AUTO_BACKUP_LAST_SLOT_KEY, slotKey);
+      setAutoBackupJsonStatus('Terakhir auto-backup: ' + new Date().toLocaleString('id-ID') + ' WIB');
+    }
+
+    setInterval(maybeAutoBackupJson, 60 * 1000); // cek tiap 1 menit, backup hanya jalan di jendela 14.30–16.30 WIB
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const cb = document.getElementById('autoBackupJsonToggle');
+      if (cb) cb.checked = autoBackupJsonEnabled;
+      if (autoBackupJsonEnabled) {
+        setAutoBackupJsonStatus('Aktif — backup JSON otomatis tiap 30 menit, jam 14.30–16.30 WIB.');
+      }
+    });
+
     async function loadBackupJson(file) {
       try {
         const text = await file.text();
@@ -3696,10 +3782,41 @@
       cekSub = sub;
       document.getElementById('cekSubCash').classList.toggle('active', sub === 'cash');
       document.getElementById('cekSubTempo').classList.toggle('active', sub === 'tempo');
-      // status filter mainly for tempo
-      const st = document.getElementById('cekFilterStatus');
-      if (st) st.style.display = (sub === 'tempo') ? '' : 'none';
+      populateCekStatusOptions(sub);
       renderCekTable();
+    }
+
+    // Opsi filter status berbeda untuk Cash (tidak ada konsep jatuh tempo) vs Tempo
+    function populateCekStatusOptions(sub) {
+      const sel = document.getElementById('cekFilterStatus');
+      if (!sel) return;
+      const cur = sel.value;
+      if (sub === 'tempo') {
+        sel.innerHTML = '<option value="all">Semua Status</option>' +
+          '<option value="lunas">Lunas</option>' +
+          '<option value="belum_jt">Belum Jatuh Tempo</option>' +
+          '<option value="overdue">Sudah Jatuh Tempo</option>' +
+          '<option value="titip">Titip / Sebagian</option>';
+      } else {
+        sel.innerHTML = '<option value="all">Semua Status</option>' +
+          '<option value="lunas">Lunas</option>' +
+          '<option value="titip">Titip / Sebagian</option>' +
+          '<option value="belum_bayar">Belum Bayar</option>';
+      }
+      const validValues = Array.from(sel.options).map(o => o.value);
+      sel.value = validValues.includes(cur) ? cur : 'all';
+    }
+
+    // Populate dropdown Bulan dari data faktur yang sedang tampil di sub-tab ini
+    function populateCekFilterBulan(rows) {
+      const sel = document.getElementById('cekFilterBulan');
+      if (!sel) return;
+      const cur = sel.value;
+      const months = [...new Set(rows.map(r => r.month).filter(Boolean))];
+      months.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
+      sel.innerHTML = '<option value="all">Semua Bulan</option>' +
+        months.map(m => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
+      sel.value = months.includes(cur) ? cur : 'all';
     }
 
     function parseSalesDate(s) {
@@ -3736,6 +3853,12 @@
       if (!d || isNaN(d)) return '—';
       const pad = n => String(n).padStart(2, '0');
       return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear();
+    }
+
+    // Nama bulan (Indonesia) dari sebuah Date, dipakai untuk filter Bulan di Cek Data
+    function monthNameFromDate(d) {
+      if (!d || isNaN(d)) return 'Lainnya';
+      return MONTH_ORDER[d.getMonth()] || 'Lainnya';
     }
 
     // Info pembayaran + bagian (Piutang/Dropping) dari tab Uang Masuk (allRows)
@@ -3915,6 +4038,7 @@
           g.jatuhTempoStr = '—';
           g.umurOverdue = 0;
           g.umurOverdueStr = '—';
+          g.month = monthNameFromDate(g.tglDate);
           out.push(g);
         }
       } else {
@@ -3981,6 +4105,7 @@
             g.umurOverdue = 0;
             g.umurOverdueStr = '—';
           }
+          g.month = monthNameFromDate(g.tglDate);
           out.push(g);
         }
       }
@@ -4013,20 +4138,28 @@
       const payType = isTempo ? 'TEMPO' : 'CASH';
       let rows = buildCekFakturList(payType);
 
+      // isi dropdown Bulan berdasarkan data yang tersedia di sub-tab ini (sebelum difilter)
+      populateCekFilterBulan(rows);
+
       const q = (document.getElementById('cekSearchInput').value || '').trim().toLowerCase();
       const stFilter = (document.getElementById('cekFilterStatus').value || 'all');
+      const bulanFilter = (document.getElementById('cekFilterBulan').value || 'all');
 
       if (q) {
         rows = rows.filter(r =>
           (r.noFaktur + ' ' + r.customer + ' ' + r.sales + ' ' + r.alamat).toLowerCase().includes(q)
         );
       }
-      if (isTempo && stFilter !== 'all') {
+      if (bulanFilter !== 'all') {
+        rows = rows.filter(r => r.month === bulanFilter);
+      }
+      if (stFilter !== 'all') {
         rows = rows.filter(r => {
           if (stFilter === 'lunas') return r.statusCek === 'Lunas';
           if (stFilter === 'overdue') return r.statusCek === 'Overdue';
           if (stFilter === 'belum_jt') return r.statusCek === 'Belum Jatuh Tempo';
           if (stFilter === 'titip') return r.statusCek === 'Titip';
+          if (stFilter === 'belum_bayar') return r.statusCek === 'Cash';
           return true;
         });
       }
@@ -4134,6 +4267,7 @@
     function resetCekSearch() {
       document.getElementById('cekSearchInput').value = '';
       document.getElementById('cekFilterStatus').value = 'all';
+      document.getElementById('cekFilterBulan').value = 'all';
       renderCekTable();
     }
 
@@ -4173,15 +4307,17 @@
         stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate()) + '.xlsx');
     }
 
-    // Enter key on cek search
+    // Enter key on cek search + auto-render saat filter Bulan/Status diganti
     document.addEventListener('DOMContentLoaded', function() {
       const inp = document.getElementById('cekSearchInput');
       if (inp) inp.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') renderCekTable();
       });
-      // hide status filter on cash by default
       const st = document.getElementById('cekFilterStatus');
-      if (st) st.style.display = 'none';
+      if (st) st.addEventListener('change', renderCekTable);
+      const bl = document.getElementById('cekFilterBulan');
+      if (bl) bl.addEventListener('change', renderCekTable);
+      populateCekStatusOptions(cekSub);
     });
 
     // ============================================================
