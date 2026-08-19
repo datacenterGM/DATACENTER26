@@ -1,0 +1,25 @@
+{
+  "name": "DATACENTER",
+  "short_name": "DATACENTER",
+  "description": "Laporan Harian + Rapikan Data",
+  "start_url": "/DATACENTER26/index.html",
+  "scope": "/DATACENTER26/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "icons": [
+    {
+      "src": "/DATACENTER26/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/DATACENTER26/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -15,6 +15,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
     :root, [data-theme="light"] {
@@ -1173,6 +1174,7 @@
       </div>
 
       <div class="header-right">
+        <div id="cloudSyncStatus" style="font-size:0.7rem;color:var(--muted);white-space:nowrap;"></div>
         <div class="menu-wrap" id="menuWrap">
           <button class="menu-btn" id="menuBtn" onclick="toggleMenu()">☰ Menu ▾</button>
           <div class="menu-dd" id="menuDd">
@@ -1644,6 +1646,92 @@
   <script>
     let allRows = [];
 
+    // ================================================================
+    // ---- SUPABASE: sinkronisasi data ke cloud ----
+    // ================================================================
+    // Catatan: SUPABASE_KEY di bawah ini adalah "publishable key" (anon key).
+    // Kunci ini memang aman untuk ditaruh di kode client (bukan rahasia),
+    // TAPI itu artinya siapa pun yang membuka halaman ini bisa baca/tulis
+    // ke tabel Supabase selama Row Level Security (RLS) mengizinkan.
+    // Jalankan SQL setup (lihat file supabase-setup.sql) di Supabase SQL
+    // Editor supaya tabel & policy-nya siap sebelum data bisa masuk.
+    const SUPABASE_URL = 'https://tozrazbenakpjmgmjloe.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_tuda8kGzNQh0oV1_C3E0wg_R64DzDFE';
+    const SUPABASE_ROW_ID = 'main'; // satu baris ringkasan berisi seluruh data (allRows + salesRows)
+
+    let supabaseClient = null;
+    try {
+      if (window.supabase && typeof window.supabase.createClient === 'function') {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      }
+    } catch (err) {
+      console.warn('Supabase gagal diinisialisasi:', err);
+    }
+
+    const cloudStatusEl = { current: null };
+    function setCloudStatus(msg, isErr){
+      // Tampilkan indikator kecil di console + (opsional) elemen #cloudSyncStatus jika ada di halaman
+      const el = document.getElementById('cloudSyncStatus');
+      if (el) {
+        el.textContent = msg;
+        el.style.color = isErr ? 'var(--red)' : 'var(--muted)';
+      }
+      if (isErr) console.warn('[Supabase]', msg); else console.log('[Supabase]', msg);
+    }
+
+    // Kirim seluruh allRows + salesRows saat ini ke Supabase (upsert satu baris ringkasan)
+    let _syncTimer = null;
+    function queueCloudSync(){
+      if (!supabaseClient) return;
+      clearTimeout(_syncTimer);
+      // Debounce supaya tidak spam network saat banyak perubahan beruntun
+      _syncTimer = setTimeout(pushToSupabase, 800);
+    }
+
+    async function pushToSupabase(){
+      if (!supabaseClient) return false;
+      try {
+        setCloudStatus('Menyimpan ke cloud…', false);
+        const { error } = await supabaseClient
+          .from('app_data')
+          .upsert({
+            id: SUPABASE_ROW_ID,
+            all_rows: allRows,
+            sales_rows: (typeof salesRows !== 'undefined' ? salesRows : []),
+            updated_at: new Date().toISOString()
+          });
+        if (error) throw error;
+        setCloudStatus('Tersimpan di cloud ✓', false);
+        return true;
+      } catch (err) {
+        setCloudStatus('Gagal sync ke cloud: ' + (err.message || err), true);
+        return false;
+      }
+    }
+
+    // Ambil data terakhir dari Supabase (dipanggil saat aplikasi dibuka)
+    async function pullFromSupabase(){
+      if (!supabaseClient) return null;
+      try {
+        setCloudStatus('Mengambil data dari cloud…', false);
+        const { data, error } = await supabaseClient
+          .from('app_data')
+          .select('all_rows, sales_rows, updated_at')
+          .eq('id', SUPABASE_ROW_ID)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          setCloudStatus('Data cloud dimuat ✓', false);
+          return data;
+        }
+        setCloudStatus('Belum ada data di cloud.', false);
+        return null;
+      } catch (err) {
+        setCloudStatus('Gagal ambil data cloud (pakai data lokal): ' + (err.message || err), true);
+        return null;
+      }
+    }
+
     // ---- IndexedDB persistence ----
     const DB_NAME = 'uangMasukDB';
     const DB_VERSION = 1;
@@ -1679,6 +1767,7 @@
       } catch (err) {
         console.warn('Gagal simpan data ke IndexedDB:', err);
       }
+      queueCloudSync();
     }
 
     async function loadRowsFromDB() {
@@ -1724,6 +1813,7 @@
       } catch (err) {
         console.warn('Gagal simpan data penjualan ke IndexedDB:', err);
       }
+      queueCloudSync();
     }
 
     async function loadSalesFromDB() {
@@ -1918,6 +2008,7 @@
       allRows = [];
       invalidateFakturIndex();
       clearRowsInDB();
+      queueCloudSync();
       fileNameEl.textContent = 'Belum ada file diupload';
       document.getElementById('fakturCards').classList.remove('show');
       searchBar.classList.remove('show');
@@ -2988,6 +3079,7 @@
       lastProfitPayRows = [];
       lastProfitSalesRows = [];
       clearSalesInDB();
+      queueCloudSync();
       salesFileNameEl.textContent = 'Belum ada file diupload';
       salesTableWrap.style.display = 'none';
       salesResultInfo.style.display = 'none';
@@ -3257,9 +3349,27 @@
       fakturVirtual.setData(rows);
     }
 
-    // ---- Load persisted data from IndexedDB on startup ----
+    // ---- Load persisted data on startup: coba cloud (Supabase) dulu, fallback ke IndexedDB lokal ----
     (async function initFromDB() {
-      const saved = await loadRowsFromDB();
+      let saved = null;
+      let savedSales = null;
+
+      // 1) Coba ambil dari Supabase (kalau online & tabel sudah di-setup)
+      const cloud = await pullFromSupabase();
+      if (cloud && (Array.isArray(cloud.all_rows) || Array.isArray(cloud.sales_rows))) {
+        saved = Array.isArray(cloud.all_rows) ? cloud.all_rows : [];
+        savedSales = Array.isArray(cloud.sales_rows) ? cloud.sales_rows : [];
+        // simpan juga ke IndexedDB lokal sebagai cache offline
+        allRows = saved;
+        salesRows = savedSales;
+        saveRowsToDBLocal(allRows);
+        saveSalesToDBLocal(salesRows);
+      } else {
+        // 2) Fallback: tidak ada data cloud / lagi offline → pakai data lokal di IndexedDB
+        saved = await loadRowsFromDB();
+        savedSales = await loadSalesFromDB();
+      }
+
       if (saved && saved.length) {
         allRows = saved;
         invalidateFakturIndex();
@@ -3270,7 +3380,6 @@
         searchBar.classList.add('show');
       }
 
-      const savedSales = await loadSalesFromDB();
       if (savedSales && savedSales.length) {
         salesRows = savedSales.map(r => r.month ? r : Object.assign({}, r, { month: detectMonth(r.sheet, r.tanggal) || 'Lainnya' }));
         salesEmptyState.style.display = 'none';
@@ -3284,6 +3393,30 @@
         document.getElementById('tabsBar').style.display = 'flex';
       }
     })();
+
+    // Simpan ke IndexedDB tanpa memicu sync ulang ke cloud (dipakai saat baru menarik data DARI cloud)
+    async function saveRowsToDBLocal(rows){
+      try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).put(rows, DB_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) { console.warn('Gagal cache allRows ke IndexedDB:', err); }
+    }
+    async function saveSalesToDBLocal(rows){
+      try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).put(rows, DB_KEY_SALES);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) { console.warn('Gagal cache salesRows ke IndexedDB:', err); }
+    }
 
     // ---- PWA: install prompt ----
     let deferredPrompt = null;
