@@ -1192,6 +1192,14 @@
               📥 Load Backup JSON
             </label>
             <div class="menu-divider"></div>
+            <div class="menu-files" id="backupFolderRow" style="font-size:0.72rem;">
+              <div style="margin-bottom:4px;color:var(--muted);">Backup otomatis ke folder laptop:</div>
+              <div id="backupFolderLabel" style="margin-bottom:6px;font-weight:600;">Belum dipilih</div>
+              <div id="backupStatus" style="margin-bottom:6px;color:var(--muted);"></div>
+            </div>
+            <button class="menu-item" onclick="pickBackupFolder(); closeMenu();">📁 Pilih Folder Backup</button>
+            <button class="menu-item" id="restoreBackupBtn" onclick="restoreFromBackupFolder(); closeMenu();" style="display:none;">🔁 Pulihkan dari Folder Backup</button>
+            <div class="menu-divider"></div>
             <div class="menu-files" id="fileName">Data tersimpan (3.774 baris)</div>
             <div class="menu-divider"></div>
             <button class="menu-item" onclick="toggleTheme(); closeMenu();">
@@ -1682,10 +1690,12 @@
     // Kirim seluruh allRows + salesRows saat ini ke Supabase (upsert satu baris ringkasan)
     let _syncTimer = null;
     function queueCloudSync(){
-      if (!supabaseClient) return;
       clearTimeout(_syncTimer);
-      // Debounce supaya tidak spam network saat banyak perubahan beruntun
-      _syncTimer = setTimeout(pushToSupabase, 800);
+      // Debounce supaya tidak spam network/disk saat banyak perubahan beruntun
+      _syncTimer = setTimeout(() => {
+        if (supabaseClient) pushToSupabase();
+        if (backupDirHandle) writeLocalBackup();
+      }, 800);
     }
 
     async function pushToSupabase(){
@@ -1731,6 +1741,149 @@
         return null;
       }
     }
+
+    // ================================================================
+    // ---- BACKUP OTOMATIS KE FOLDER LOKAL (File System Access API) ----
+    // Cocok untuk laptop: pilih folder (misal folder Google Drive Desktop),
+    // dan setiap ada perubahan data, file backup otomatis ditimpa di sana.
+    // Hanya didukung Chrome/Edge versi desktop.
+    // ================================================================
+    const BACKUP_DIR_KEY = 'backupDirHandle';
+    const BACKUP_FILENAME_LATEST = 'DATACENTER_backup_latest.json';
+    let backupDirHandle = null;
+
+    function backupSupported(){ return 'showDirectoryPicker' in window; }
+
+    async function saveBackupDirHandle(handle){
+      try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).put(handle, BACKUP_DIR_KEY);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) { console.warn('Gagal simpan referensi folder backup:', err); }
+    }
+
+    async function loadBackupDirHandle(){
+      try {
+        const db = await openDB();
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const req = tx.objectStore(DB_STORE).get(BACKUP_DIR_KEY);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => reject(req.error);
+        });
+      } catch (err) { return null; }
+    }
+
+    function updateBackupFolderLabel(){
+      const el = document.getElementById('backupFolderLabel');
+      if (el) el.textContent = backupDirHandle ? ('📁 Aktif: ' + backupDirHandle.name) : 'Belum dipilih';
+      const btnRestore = document.getElementById('restoreBackupBtn');
+      if (btnRestore) btnRestore.style.display = backupDirHandle ? 'block' : 'none';
+    }
+
+    async function ensureBackupPermission(){
+      if (!backupDirHandle) return false;
+      try {
+        let perm = await backupDirHandle.queryPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') perm = await backupDirHandle.requestPermission({ mode: 'readwrite' });
+        return perm === 'granted';
+      } catch (err) { return false; }
+    }
+
+    async function pickBackupFolder(){
+      if (!backupSupported()) {
+        alert('Fitur pilih folder backup otomatis hanya didukung di Chrome / Edge versi desktop (laptop/PC).\n\nSebagai gantinya, pakai tombol "Save Backup JSON" untuk backup manual — file akan masuk ke folder Download browser Anda. Kalau folder Download itu Anda set ke dalam folder Google Drive Desktop, otomatis ke-sync ke Drive juga.');
+        return;
+      }
+      try {
+        const handle = await window.showDirectoryPicker();
+        const perm = await handle.requestPermission({ mode: 'readwrite' });
+        if (perm !== 'granted') { alert('Izin akses folder ditolak.'); return; }
+        backupDirHandle = handle;
+        await saveBackupDirHandle(handle);
+        updateBackupFolderLabel();
+        await writeLocalBackup();
+        alert('Folder backup dipilih: "' + handle.name + '".\n\nSetiap ada perubahan data (upload Excel, edit, dll), backup akan otomatis tersimpan/ditimpa di folder ini sebagai file "' + BACKUP_FILENAME_LATEST + '".');
+      } catch (err) {
+        if (err && err.name !== 'AbortError') { console.warn(err); alert('Gagal memilih folder: ' + err.message); }
+      }
+    }
+
+    function buildBackupPayload(){
+      return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        app: 'DATACENTER',
+        cashInflow: allRows || [],
+        penjualan: (typeof salesRows !== 'undefined' ? salesRows : [])
+      };
+    }
+
+    function setBackupStatus(msg, isErr){
+      const el = document.getElementById('backupStatus');
+      if (el) { el.textContent = msg; el.style.color = isErr ? 'var(--red)' : 'var(--muted)'; }
+      if (isErr) console.warn('[Backup lokal]', msg); else console.log('[Backup lokal]', msg);
+    }
+
+    async function writeLocalBackup(){
+      if (!backupDirHandle) return false;
+      const ok = await ensureBackupPermission();
+      if (!ok) { setBackupStatus('Izin folder backup dicabut — pilih ulang foldernya.', true); return false; }
+      try {
+        const text = JSON.stringify(buildBackupPayload());
+        const fileHandle = await backupDirHandle.getFileHandle(BACKUP_FILENAME_LATEST, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        setBackupStatus('Backup lokal tersimpan ✓ ' + new Date().toLocaleTimeString('id-ID'), false);
+        return true;
+      } catch (err) {
+        console.warn('Gagal tulis backup lokal:', err);
+        setBackupStatus('Gagal backup lokal: ' + (err.message || err), true);
+        return false;
+      }
+    }
+
+    async function restoreFromBackupFolder(){
+      if (!backupDirHandle) { alert('Pilih folder backup dulu.'); return; }
+      const ok = await ensureBackupPermission();
+      if (!ok) { alert('Izin akses folder ditolak/dicabut. Pilih ulang foldernya lewat "Pilih Folder Backup".'); return; }
+      try {
+        const fileHandle = await backupDirHandle.getFileHandle(BACKUP_FILENAME_LATEST);
+        const file = await fileHandle.getFile();
+        if (!confirm('Ini akan MENIMPA data yang sedang aktif di aplikasi dengan isi backup terakhir dari folder tersebut. Lanjutkan?')) return;
+        await loadBackupJson(file);
+        alert('Data berhasil dipulihkan dari folder backup.');
+      } catch (err) {
+        console.warn(err);
+        alert('Gagal memulihkan: belum ada file backup di folder ini, atau terjadi error: ' + (err.message || err));
+      }
+    }
+
+    // Muat kembali handle folder backup yang sudah dipilih sebelumnya (kalau ada)
+    (async function initBackupFolder(){
+      if (!backupSupported()) {
+        const row = document.getElementById('backupFolderRow');
+        if (row) row.style.display = 'none';
+        return;
+      }
+      const handle = await loadBackupDirHandle();
+      if (handle) {
+        // Cek izin tanpa memaksa prompt (biar tidak minta izin tiap buka halaman)
+        try {
+          const perm = await handle.queryPermission({ mode: 'readwrite' });
+          backupDirHandle = handle;
+          updateBackupFolderLabel();
+          if (perm !== 'granted') {
+            setBackupStatus('Perlu izin ulang untuk folder backup — klik "Pilih Folder Backup".', true);
+          }
+        } catch (err) { /* handle sudah tidak valid, abaikan */ }
+      }
+    })();
 
     // ---- IndexedDB persistence ----
     const DB_NAME = 'uangMasukDB';
