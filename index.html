@@ -1257,6 +1257,8 @@
       </select>
       <button class="btn" onclick="doSearch()">Cari</button>
       <button class="btn btn-outline" onclick="resetSearch()">Reset</button>
+      <button class="btn btn-outline" onclick="downloadFakturExcel('filter')">⬇ Filter</button>
+      <button class="btn btn-outline" onclick="downloadFakturExcel('all')">⬇ Semua</button>
     </div>
 
     <div class="daily-panel" id="dailyPanel" style="display: block;">
@@ -1277,6 +1279,7 @@
               <th class="num">Bayar Cash</th>
               <th class="num">Bayar TF</th>
               <th class="num">Total Bayar</th>
+              <th>⬇</th>
             </tr>
           </thead>
           <tbody id="dailyBody"><tr data-sheet="01-08" onclick="filterBySheet(&#39;01-08&#39;)"><td><strong>SABTU 01/08/2026</strong></td><td class="muted">01-08</td><td class="num">36</td><td class="num">16.114.586</td><td class="num">3.684.100</td><td class="num">20.791.186</td><td class="num">19.798.686</td><td class="num">—</td><td class="num"><strong>19.798.686</strong></td></tr><tr data-sheet="03-08" onclick="filterBySheet(&#39;03-08&#39;)"><td><strong>SENEN 03/08/2026</strong></td><td class="muted">03-08</td><td class="num">46</td><td class="num">16.939.180</td><td class="num">6.843.200</td><td class="num">36.220.780</td><td class="num">18.396.980</td><td class="num">5.385.400</td><td class="num"><strong>23.782.380</strong></td></tr><tr data-sheet="04-08" onclick="filterBySheet(&#39;04-08&#39;)"><td><strong>SELASA 04/08/2026</strong></td><td class="muted">04-08</td><td class="num">44</td><td class="num">17.458.970</td><td class="num">11.507.380</td><td class="num">30.107.350</td><td class="num">28.966.350</td><td class="num">—</td><td class="num"><strong>28.966.350</strong></td></tr><tr data-sheet="05-08" onclick="filterBySheet(&#39;05-08&#39;)"><td><strong>RABU 05/08/2026</strong></td><td class="muted">05-08</td><td class="num">57</td><td class="num">19.917.044</td><td class="num">7.918.864</td><td class="num">30.311.208</td><td class="num">27.032.208</td><td class="num">803.700</td><td class="num"><strong>27.835.908</strong></td></tr><tr data-sheet="06-08" onclick="filterBySheet(&#39;06-08&#39;)"><td><strong>KAMIS 06/08/2026</strong></td><td class="muted">06-08</td><td class="num">38</td><td class="num">13.839.257</td><td class="num">26.788.500</td><td class="num">46.324.457</td><td class="num">40.627.757</td><td class="num">—</td><td class="num"><strong>40.627.757</strong></td></tr><tr data-sheet="07-08" onclick="filterBySheet(&#39;07-08&#39;)"><td><strong>JUMAT 07/08/2026</strong></td><td class="muted">07-08</td><td class="num">42</td><td class="num">18.422.508</td><td class="num">4.159.400</td><td class="num">24.081.908</td><td class="num">20.844.908</td><td class="num">1.737.000</td><td class="num"><strong>22.581.908</strong></td></tr><tr data-sheet="08-08" onclick="filterBySheet(&#39;08-08&#39;)"><td><strong>SABTU 08/08/2026</strong></td><td class="muted">08-08</td><td class="num">36</td><td class="num">21.751.976</td><td class="num">2.034.796</td><td class="num">28.664.616</td><td class="num">19.434.408</td><td class="num">4.352.364</td><td class="num"><strong>23.786.772</strong></td></tr><tr data-sheet="10-08" onclick="filterBySheet(&#39;10-08&#39;)"><td><strong>SENIN 10/08/2026</strong></td><td class="muted">10-08</td><td class="num">34</td><td class="num">10.621.231</td><td class="num">1.698.228</td><td class="num">13.546.959</td><td class="num">12.319.459</td><td class="num">—</td><td class="num"><strong>12.319.459</strong></td></tr><tr data-sheet="11-08" onclick="filterBySheet(&#39;11-08&#39;)"><td><strong>SELASA 11/08/2026</strong></td><td class="muted">11-08</td><td class="num">31</td><td class="num">12.921.708</td><td class="num">1.942.900</td><td class="num">16.386.608</td><td class="num">14.864.608</td><td class="num">—</td><td class="num"><strong>14.864.608</strong></td></tr><tr data-sheet="12-08" onclick="filterBySheet(&#39;12-08&#39;)"><td><strong>RABU 12/08/2026</strong></td><td class="muted">12-08</td><td class="num">63</td><td class="num">26.036.598</td><td class="num">4.132.400</td><td class="num">30.168.998</td><td class="num">30.168.998</td><td class="num">—</td><td class="num"><strong>30.168.998</strong></td></tr><tr class="total-row"><td colspan="2">TOTAL (10 hari)</td><td class="num">427</td><td class="num">174.023.058</td><td class="num">70.709.768</td><td class="num">276.604.070</td><td class="num">232.454.362</td><td class="num">12.278.464</td><td class="num">244.732.826</td></tr></tbody>
@@ -1362,7 +1365,9 @@
         <button class="subtab-btn" id="subBtnProduk" onclick="switchSalesSub('produk')">📦 Profit Per Produk</button>
         <button class="subtab-btn" id="subBtnPay" onclick="switchSalesSub('pay')">💳 Profit Per Produk Per Pembayaran</button>
         <button class="subtab-btn" id="subBtnSales" onclick="switchSalesSub('sales')">👤 Profit Per Sales</button>
-        <button class="subtab-dl" id="btnDlProfit" onclick="downloadCurrentSalesExcel()">⬇ Download Excel</button>
+        <button class="subtab-btn" id="subBtnBulan" onclick="switchSalesSub('bulan')">🗓️ Profit Per Bulan</button>
+        <button class="subtab-dl" id="btnDlProfit" onclick="downloadCurrentSalesExcel('filter')">⬇ Filter</button>
+        <button class="subtab-dl" id="btnDlTransAll" onclick="downloadCurrentSalesExcel('all')">⬇ Semua</button>
       </div>
 
       <div class="table-wrap" id="salesTableWrap" style="display: block;">
@@ -1455,6 +1460,28 @@
         </table>
       </div>
 
+      <div class="profit-wrap" id="profitBulanWrap">
+        <div class="profit-head">
+          <span>PROFIT PER BULAN</span>
+          <span class="muted" id="profitBulanPeriod">—</span>
+        </div>
+        <table class="profit-table">
+          <thead>
+            <tr>
+              <th>Bulan</th>
+              <th class="num">Total Qty Fitri</th>
+              <th class="num">Total Qty Rupa2</th>
+              <th class="num">Totl Nominl Fitri</th>
+              <th class="num">Total Nominal Rupa2</th>
+              <th class="num">Totl HPP</th>
+              <th class="num">Profit</th>
+              <th class="num">Margin</th>
+            </tr>
+          </thead>
+          <tbody id="profitBulanBody"></tbody>
+        </table>
+      </div>
+
       <div class="empty-state" id="salesEmptyState" style="display: none;">
         <div class="big">📦</div>
         <div><strong>Upload file Excel</strong> data penjualan</div>
@@ -1473,7 +1500,8 @@
       <div class="subtabs show" id="cekSubtabs" style="display:flex;">
         <button class="subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
         <button class="subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
-        <button class="subtab-dl" onclick="downloadCekExcel()">⬇ Download Excel</button>
+        <button class="subtab-dl" onclick="downloadCekExcel('filter')">⬇ Filter</button>
+        <button class="subtab-dl" onclick="downloadCekExcel('all')">⬇ Semua</button>
       </div>
 
       <div class="sales-cards show" id="cekCards" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-bottom:10px;">
@@ -1481,6 +1509,9 @@
         <div class="scard"><div class="sc-label" id="cekCard2Label">Nominal</div><div class="sc-value" id="cekCard2">0</div></div>
         <div class="scard"><div class="sc-label" id="cekCard3Label">—</div><div class="sc-value" id="cekCard3">0</div></div>
         <div class="scard"><div class="sc-label" id="cekCard4Label">—</div><div class="sc-value" id="cekCard4">0</div></div>
+        <div class="scard"><div class="sc-label">Nominal Lunas</div><div class="sc-value" id="cekCardLunas">0</div></div>
+        <div class="scard"><div class="sc-label">Diterima dr Titip</div><div class="sc-value" id="cekCardTitip">0</div></div>
+        <div class="scard" id="cekCardCrossWrap"><div class="sc-label">Lunas + Titip (crosscheck)</div><div class="sc-value" id="cekCardCross">0</div></div>
       </div>
 
       <div class="search-bar show" id="cekSearchBar" style="display:flex;">
@@ -1499,6 +1530,10 @@
         <button class="btn btn-outline" onclick="resetCekSearch()">Reset</button>
       </div>
 
+      <div style="margin:-4px 0 10px;color:var(--muted);font-size:0.78rem;">
+        💡 <b>Nominal Lunas</b> + <b>Diterima dr Titip</b> = kolom <b>Lunas + Titip (crosscheck)</b>.
+        Bandingkan angka ini dengan <b>TOTAL Uang Masuk</b> di tab 💰 Uang Masuk untuk bulan yang sama — kalau beda, berarti ada faktur yang belum tercatat / salah status.
+      </div>
       <div class="result-info" id="cekResultInfo" style="display:block;margin-bottom:8px;color:var(--muted);font-size:0.85rem;"></div>
 
       <div class="table-wrap" id="cekTableWrap" style="display:block;overflow-x:auto;max-height:68vh;border:1px solid var(--border);border-radius:10px;background:var(--card);">
@@ -2139,7 +2174,8 @@
       if (el) el.textContent = t === 'light' ? '🌙 Mode gelap' : '☀️ Mode terang';
     }
     (function initTheme() {
-      const saved = localStorage.getItem('faktur-theme') || 'light';
+      // Pertama kali dibuka (belum ada preferensi tersimpan) -> langsung mode gelap
+      const saved = localStorage.getItem('faktur-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', saved);
       updateThemeLabel();
     })();
@@ -2528,6 +2564,7 @@
           '<td class="num">' + fmt(g.cash) + '</td>' +
           '<td class="num">' + fmt(g.tf) + '</td>' +
           '<td class="num"><strong>' + fmt(total) + '</strong></td>' +
+          '<td><button title="Download Excel hari ini" onclick="event.stopPropagation(); downloadFakturDay(\'' + esc(g.sheet).replace(/'/g, "\\'") + '\')" style="background:none;border:1px solid var(--border);border-radius:6px;padding:2px 8px;cursor:pointer;color:var(--accent);font-size:0.85rem;">⬇</button></td>' +
         '</tr>';
       }).join('') +
       '<tr class="total-row">' +
@@ -2539,6 +2576,7 @@
         '<td class="num">' + fmt(sumCash) + '</td>' +
         '<td class="num">' + fmt(sumTf) + '</td>' +
         '<td class="num">' + fmt(sumCash + sumTf) + '</td>' +
+        '<td></td>' +
       '</tr>';
 
       dailyPanel.style.display = 'block';
@@ -2860,6 +2898,7 @@
     let lastProfitProdukRows = [];
     let lastProfitPayRows = [];
     let lastProfitSalesRows = [];
+    let lastProfitBulanRows = [];
 
     function doSalesSearch() {
       const q = document.getElementById('salesSearchInput').value.trim().toLowerCase();
@@ -2878,6 +2917,7 @@
       if (currentSalesSub === 'produk') renderProfitProduk(filtered);
       if (currentSalesSub === 'pay') renderProfitPay(filtered);
       if (currentSalesSub === 'sales') renderProfitSales(filtered);
+      if (currentSalesSub === 'bulan') renderProfitBulan(filtered);
     }
 
     function resetSalesSearch() {
@@ -2890,6 +2930,7 @@
       if (currentSalesSub === 'produk') renderProfitProduk(salesRows);
       if (currentSalesSub === 'pay') renderProfitPay(salesRows);
       if (currentSalesSub === 'sales') renderProfitSales(salesRows);
+      if (currentSalesSub === 'bulan') renderProfitBulan(salesRows);
     }
 
     function switchSalesSub(sub) {
@@ -2899,6 +2940,8 @@
       const btnPay = document.getElementById('subBtnPay');
       if (btnPay) btnPay.classList.toggle('active', sub === 'pay');
       document.getElementById('subBtnSales').classList.toggle('active', sub === 'sales');
+      const btnBulan = document.getElementById('subBtnBulan');
+      if (btnBulan) btnBulan.classList.toggle('active', sub === 'bulan');
 
       const showTrans = sub === 'transaksi';
       document.getElementById('salesTableWrap').style.display = showTrans ? 'block' : 'none';
@@ -2906,12 +2949,24 @@
       const payWrap = document.getElementById('profitPayWrap');
       if (payWrap) payWrap.classList.toggle('show', sub === 'pay');
       document.getElementById('profitSalesWrap').classList.toggle('show', sub === 'sales');
-      document.getElementById('btnDlProfit').hidden = false;
+      const bulanWrap = document.getElementById('profitBulanWrap');
+      if (bulanWrap) bulanWrap.classList.toggle('show', sub === 'bulan');
+      const btnDl = document.getElementById('btnDlProfit');
+      const btnDlAll = document.getElementById('btnDlTransAll');
+      btnDl.hidden = false;
+      if (sub === 'transaksi') {
+        btnDl.textContent = '⬇ Filter';
+        if (btnDlAll) btnDlAll.style.display = '';
+      } else {
+        btnDl.textContent = '⬇ Download Excel';
+        if (btnDlAll) btnDlAll.style.display = 'none';
+      }
 
       const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
       if (sub === 'produk') renderProfitProduk(rows);
       if (sub === 'pay') renderProfitPay(rows);
       if (sub === 'sales') renderProfitSales(rows);
+      if (sub === 'bulan') renderProfitBulan(rows);
     }
 
     function getSalesPeriodLabel() {
@@ -3109,6 +3164,71 @@
       '</tr>';
     }
 
+    function renderProfitBulan(rows) {
+      const map = {};
+      for (const r of rows) {
+        const bulan = r.month || 'Lainnya';
+        if (!map[bulan]) {
+          map[bulan] = { bulan, qtyFitri: 0, qtyRupa: 0, nomFitri: 0, nomRupa: 0, totalHpp: 0 };
+        }
+        const g = map[bulan];
+        const qty = r.jumlah || 0;
+        const tot = r.total || 0;
+        const hpp = (r.hargaBeli || 0) * qty;
+        const isFitri = (r.produk || '').toUpperCase().includes('FITRI');
+        if (isFitri) {
+          g.qtyFitri += qty;
+          g.nomFitri += tot;
+        } else {
+          g.qtyRupa += qty;
+          g.nomRupa += tot;
+        }
+        g.totalHpp += hpp;
+      }
+      lastProfitBulanRows = Object.values(map)
+        .map(g => {
+          const totalNominal = g.nomFitri + g.nomRupa;
+          const profit = totalNominal - g.totalHpp;
+          const margin = totalNominal ? (profit / totalNominal) * 100 : 0;
+          return Object.assign({}, g, { totalNominal, profit, margin });
+        })
+        .sort((a, b) => MONTH_ORDER.indexOf(a.bulan) - MONTH_ORDER.indexOf(b.bulan));
+
+      const periodEl = document.getElementById('profitBulanPeriod');
+      if (periodEl) periodEl.textContent = getSalesPeriodLabel();
+      const body = document.getElementById('profitBulanBody');
+      if (!body) return;
+      if (!lastProfitBulanRows.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Tidak ada data</td></tr>';
+        return;
+      }
+      let tQF = 0, tQR = 0, tNF = 0, tNR = 0, tHpp = 0, tProfit = 0;
+      body.innerHTML = lastProfitBulanRows.map(r => {
+        tQF += r.qtyFitri; tQR += r.qtyRupa; tNF += r.nomFitri; tNR += r.nomRupa;
+        tHpp += r.totalHpp; tProfit += r.profit;
+        return '<tr>' +
+          '<td>' + esc(r.bulan) + '</td>' +
+          '<td class="num">' + r.qtyFitri.toLocaleString('id-ID') + '</td>' +
+          '<td class="num">' + r.qtyRupa.toLocaleString('id-ID') + '</td>' +
+          '<td class="num">' + fmt(r.nomFitri) + '</td>' +
+          '<td class="num">' + fmt(r.nomRupa) + '</td>' +
+          '<td class="num">' + fmt(r.totalHpp) + '</td>' +
+          '<td class="num"><strong>' + fmt(r.profit) + '</strong></td>' +
+          '<td class="num">' + r.margin.toFixed(1).replace('.', ',') + '%</td>' +
+        '</tr>';
+      }).join('') +
+      '<tr class="total-row">' +
+        '<td>TOTAL</td>' +
+        '<td class="num">' + tQF.toLocaleString('id-ID') + '</td>' +
+        '<td class="num">' + tQR.toLocaleString('id-ID') + '</td>' +
+        '<td class="num">' + fmt(tNF) + '</td>' +
+        '<td class="num">' + fmt(tNR) + '</td>' +
+        '<td class="num">' + fmt(tHpp) + '</td>' +
+        '<td class="num">' + fmt(tProfit) + '</td>' +
+        '<td class="num">' + ((tNF + tNR) ? ((tProfit / (tNF + tNR)) * 100).toFixed(1).replace('.', ',') : '0,0') + '%</td>' +
+      '</tr>';
+    }
+
     function applyExcelNumberFormat(ws) {
       if (!ws || !ws['!ref']) return;
       const range = XLSX.utils.decode_range(ws['!ref']);
@@ -3123,12 +3243,13 @@
       }
     }
 
-    function downloadCurrentSalesExcel() {
+    function downloadCurrentSalesExcel(scope) {
       if (typeof XLSX === 'undefined') {
         alert('Library Excel belum siap');
         return;
       }
-      const period = getSalesPeriodLabel();
+      const isAllTrans = (scope === 'all' && currentSalesSub === 'transaksi');
+      const period = isAllTrans ? 'Semua Data' : getSalesPeriodLabel();
       const safePeriod = period.replace(/\s+/g, '_');
       let sheetName, aoa, fileName;
 
@@ -3176,9 +3297,25 @@
           pf: a.pf + r.profitFitri, pr: a.pr + r.profitRupa, tp: a.tp + r.totalProfit
         }), { qf: 0, qr: 0, nf: 0, nr: 0, pf: 0, pr: 0, tp: 0 });
         aoa.push(['', 'TOTAL', t.qf, t.qr, t.nf, t.nr, t.pf, t.pr, t.tp]);
+      } else if (currentSalesSub === 'bulan') {
+        if (!lastProfitBulanRows.length) renderProfitBulan(lastSalesFiltered.length ? lastSalesFiltered : salesRows);
+        sheetName = 'Profit Per Bulan';
+        fileName = 'Profit_Per_Bulan_' + safePeriod + '.xlsx';
+        aoa = [['PROFIT PER BULAN', '', '', '', '', '', '', period]];
+        aoa.push(['Bulan', 'Total Qty Fitri', 'Total Qty Rupa2', 'Totl Nominl Fitri', 'Total Nominal Rupa2', 'Totl HPP', 'Profit', 'Margin (%)']);
+        lastProfitBulanRows.forEach(r => {
+          aoa.push([r.bulan, r.qtyFitri, r.qtyRupa, r.nomFitri, r.nomRupa, r.totalHpp, r.profit, Number(r.margin.toFixed(1))]);
+        });
+        const t2 = lastProfitBulanRows.reduce((a, r) => ({
+          qf: a.qf + r.qtyFitri, qr: a.qr + r.qtyRupa,
+          nf: a.nf + r.nomFitri, nr: a.nr + r.nomRupa,
+          hp: a.hp + r.totalHpp, pr: a.pr + r.profit
+        }), { qf: 0, qr: 0, nf: 0, nr: 0, hp: 0, pr: 0 });
+        const marginTotal = (t2.nf + t2.nr) ? Number(((t2.pr / (t2.nf + t2.nr)) * 100).toFixed(1)) : 0;
+        aoa.push(['TOTAL', t2.qf, t2.qr, t2.nf, t2.nr, t2.hp, t2.pr, marginTotal]);
       } else {
-        // Transaksi — data yang sedang difilter
-        const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+        // Transaksi — 'filter' pakai data yang sedang difilter, 'all' pakai seluruh data
+        const rows = isAllTrans ? salesRows : (lastSalesFiltered.length ? lastSalesFiltered : salesRows);
         sheetName = 'Transaksi';
         fileName = 'Transaksi_Penjualan_' + safePeriod + '.xlsx';
         aoa = [['DATA TRANSAKSI PENJUALAN', '', '', '', '', '', '', '', '', '', '', '', '', period]];
@@ -3379,6 +3516,7 @@
       lastProfitProdukRows = [];
       lastProfitPayRows = [];
       lastProfitSalesRows = [];
+      lastProfitBulanRows = [];
       clearSalesInDB();
       queueCloudSync();
       salesFileNameEl.textContent = 'Belum ada file diupload';
@@ -3390,12 +3528,16 @@
       const ppw = document.getElementById('profitPayWrap');
       if (ppw) ppw.classList.remove('show');
       document.getElementById('profitSalesWrap').classList.remove('show');
+      const pbw = document.getElementById('profitBulanWrap');
+      if (pbw) pbw.classList.remove('show');
       currentSalesSub = 'transaksi';
       document.getElementById('subBtnTransaksi').classList.add('active');
       document.getElementById('subBtnProduk').classList.remove('active');
       const sbp = document.getElementById('subBtnPay');
       if (sbp) sbp.classList.remove('active');
       document.getElementById('subBtnSales').classList.remove('active');
+      const sbb = document.getElementById('subBtnBulan');
+      if (sbb) sbb.classList.remove('active');
       salesEmptyState.style.display = 'block';
       salesEmptyState.querySelector('.hint').textContent = 'Kolom: Tanggal, No.Faktur, Produk, Jumlah, Satuan, Harga Jual, Disc, Total, Sales, Customer, Alamat, Pembayaran, Harga Beli.\nData diproses di browser Anda.';
       document.getElementById('clearSalesBtn').style.display = 'none';
@@ -3466,6 +3608,73 @@
       updateCards(scope);
       buildDailySummary(scope);
       renderTable(scope);
+    }
+
+    // ---- Export Excel tab Uang Masuk (untuk print harian / bulanan) ----
+    function buildFakturAoa(rows, periodLabel) {
+      const lpMap = buildLastPayMap();
+      const aoa = [['DATA UANG MASUK', '', '', '', '', '', '', '', '', '', '', '', periodLabel]];
+      aoa.push(['Tanggal', 'Sheet', 'Bagian', 'Sales', 'No Faktur', 'Nama Toko', 'Alamat',
+        'Tagihan', 'Minyak Cash', 'Minyak TF', 'Rupa Cash', 'Rupa TF', 'Bayar Terakhir', 'Status']);
+      rows.forEach(r => {
+        const lp = lpMap[r.faktur];
+        const lastDate = lp ? lp.date : r.date;
+        aoa.push([
+          r.date || '', r.sheet || '', r.section || '', r.sales || '', r.faktur || '',
+          r.toko || '', r.alamat || '',
+          r.tagihan || 0, r.minyakCash || 0, r.minyakTf || 0, r.rupaCash || 0, r.rupaTf || 0,
+          lastDate || '', r.status || ''
+        ]);
+      });
+      const totalCash = rows.reduce((s, r) => s + (r.minyakCash || 0) + (r.rupaCash || 0), 0);
+      const totalTf = rows.reduce((s, r) => s + (r.minyakTf || 0) + (r.rupaTf || 0), 0);
+      const totalTagihan = rows.reduce((s, r) => s + (r.tagihan || 0), 0);
+      aoa.push(['', '', '', '', '', '', 'TOTAL', totalTagihan, '', '', '', '', 'Cash+TF', (totalCash + totalTf)]);
+      return aoa;
+    }
+
+    function exportFakturAoa(aoa, sheetName, fileName) {
+      if (typeof XLSX === 'undefined') {
+        alert('Library Excel belum siap');
+        return;
+      }
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      applyExcelNumberFormat(ws);
+      if (!ws['!cols']) {
+        const colCount = (aoa[1] || aoa[0] || []).length;
+        ws['!cols'] = Array.from({ length: colCount }, () => ({ wch: 14 }));
+      }
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, fileName);
+    }
+
+    function downloadFakturExcel(scope) {
+      const rows = (scope === 'all') ? allRows : lastFakturFiltered;
+      if (!rows.length) {
+        alert('Tidak ada data untuk diunduh.');
+        return;
+      }
+      const monSel = document.getElementById('filterMonth');
+      const period = (scope === 'all') ? 'Semua Data' : (monSel && monSel.value !== 'all' ? monSel.value : 'Semua Bulan');
+      const safePeriod = period.replace(/\s+/g, '_');
+      const aoa = buildFakturAoa(rows, period);
+      const stamp = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      exportFakturAoa(aoa, 'Uang Masuk', 'UangMasuk_' + safePeriod + '_' +
+        stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate()) + '.xlsx');
+    }
+
+    function downloadFakturDay(sheet) {
+      const rows = allRows.filter(r => r.sheet === sheet);
+      if (!rows.length) {
+        alert('Tidak ada data untuk hari ini.');
+        return;
+      }
+      const dateLabel = rows[0].date || sheet;
+      const aoa = buildFakturAoa(rows, dateLabel);
+      const safeSheet = String(sheet).replace(/[\/\\:*?"<>|]/g, '-');
+      exportFakturAoa(aoa, 'Uang Masuk ' + sheet, 'UangMasuk_Harian_' + safeSheet + '.xlsx');
     }
 
     function openFakturModal(faktur) {
@@ -3634,7 +3843,10 @@
 
     const fakturVirtual = createVirtualTable(tableWrap, tbody, fakturRowHtml, { rowHeight: 56, colspan: 13 });
 
+    let lastFakturFiltered = [];
+
     function renderTable(rows) {
+      lastFakturFiltered = rows || [];
       resultInfo.style.display = 'block';
       resultInfo.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') + '</strong> dari <strong>' + allRows.length.toLocaleString('id-ID') + '</strong> faktur';
 
@@ -3777,6 +3989,7 @@
     const CEK_TEMPO_DAYS = 12;
     let cekSub = 'cash'; // 'cash' | 'tempo'
     let lastCekRows = [];
+    let cekBulanUserSet = false; // jadi true begitu user sengaja ganti/reset filter bulan
 
     function switchCekSub(sub) {
       cekSub = sub;
@@ -3807,6 +4020,43 @@
       sel.value = validValues.includes(cur) ? cur : 'all';
     }
 
+    // ---- Virtualisasi tabel Cek data (hanya render baris yang terlihat) ----
+    function cekRowHtml(r) {
+      const isTempo = cekSub === 'tempo';
+      if (isTempo) {
+        return '<tr>' +
+          '<td>' + esc(r.tanggal || '—') + '</td>' +
+          '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
+          '<td class="toko">' + esc(r.customer) + '</td>' +
+          '<td>' + esc(r.sales) + '</td>' +
+          '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
+          '<td>' + esc(r.jatuhTempoStr) + '</td>' +
+          '<td>' + statusBadgeCek(r) + '</td>' +
+          '<td class="num">' + (r.statusCek === 'Overdue' ? ('<strong style="color:var(--red)">' + esc(r.umurOverdueStr) + '</strong>') : '—') + '</td>' +
+          '<td class="num">' + (r.paidAmount ? r.paidAmount.toLocaleString('id-ID') : '—') + '</td>' +
+          '<td class="muted">' + esc(r.alamat) + '</td>' +
+          '<td>' + esc(r.pembayaran || 'Tempo') + '</td>' +
+        '</tr>';
+      }
+      return '<tr>' +
+        '<td>' + esc(r.tanggal || '—') + '</td>' +
+        '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
+        '<td class="toko">' + esc(r.customer) + '</td>' +
+        '<td>' + esc(r.sales) + '</td>' +
+        '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
+        '<td>' + statusBadgeCek(r) + '</td>' +
+        '<td class="num">' + r.items + '</td>' +
+        '<td class="muted">' + esc(r.alamat) + '</td>' +
+        '<td>' + esc(r.pembayaran || 'Cash') + '</td>' +
+      '</tr>';
+    }
+    const cekVirtual = createVirtualTable(
+      document.getElementById('cekTableWrap'),
+      document.getElementById('cekTbody'),
+      cekRowHtml,
+      { rowHeight: 40, colspan: 11 }
+    );
+
     // Populate dropdown Bulan dari data faktur yang sedang tampil di sub-tab ini
     function populateCekFilterBulan(rows) {
       const sel = document.getElementById('cekFilterBulan');
@@ -3814,9 +4064,17 @@
       const cur = sel.value;
       const months = [...new Set(rows.map(r => r.month).filter(Boolean))];
       months.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
+      const lastMonth = months.length ? months[months.length - 1] : null;
       sel.innerHTML = '<option value="all">Semua Bulan</option>' +
-        months.map(m => '<option value="' + esc(m) + '">' + esc(m) + '</option>').join('');
-      sel.value = months.includes(cur) ? cur : 'all';
+        months.map(m => '<option value="' + esc(m) + '">' + esc(m) + (m === lastMonth ? ' (terbaru)' : '') + '</option>').join('');
+      if (months.includes(cur)) {
+        sel.value = cur;
+      } else if (!cekBulanUserSet && lastMonth) {
+        // belum pernah diubah manual oleh user -> default ke bulan terakhir
+        sel.value = lastMonth;
+      } else {
+        sel.value = 'all';
+      }
     }
 
     function parseSalesDate(s) {
@@ -4169,6 +4427,14 @@
       // cards
       const nFaktur = rows.length;
       const nominal = rows.reduce((s, r) => s + (r.nominal || 0), 0);
+
+      // Crosscheck Lunas / Titip -> untuk dibandingkan manual dengan TOTAL Uang Masuk di tab Uang Masuk (bulan yang sama)
+      const nomLunas = rows.filter(r => r.statusCek === 'Lunas').reduce((s, r) => s + (r.nominal || 0), 0);
+      const nomTitip = rows.filter(r => r.statusCek === 'Titip').reduce((s, r) => s + (r.paidAmount || 0), 0);
+      document.getElementById('cekCardLunas').textContent = nomLunas.toLocaleString('id-ID');
+      document.getElementById('cekCardTitip').textContent = nomTitip.toLocaleString('id-ID');
+      document.getElementById('cekCardCross').textContent = (nomLunas + nomTitip).toLocaleString('id-ID');
+
       if (isTempo) {
         const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
         const nomOd = rows.filter(r => r.statusCek === 'Overdue').reduce((s, r) => s + r.nominal, 0);
@@ -4226,40 +4492,14 @@
       }
 
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--muted)">Tidak ada data yang cocok.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:28px;color:var(--muted)">Tidak ada data yang cocok.</td></tr>';
         info.innerHTML = 'Menampilkan <strong>0</strong> faktur';
+        cekVirtual.setData([]);
         return;
       }
 
-      const html = rows.map(r => {
-        if (isTempo) {
-          return '<tr>' +
-            '<td>' + esc(r.tanggal || '—') + '</td>' +
-            '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
-            '<td class="toko">' + esc(r.customer) + '</td>' +
-            '<td>' + esc(r.sales) + '</td>' +
-            '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
-            '<td>' + esc(r.jatuhTempoStr) + '</td>' +
-            '<td>' + statusBadgeCek(r) + '</td>' +
-            '<td class="num">' + (r.statusCek === 'Overdue' ? ('<strong style="color:var(--red)">' + esc(r.umurOverdueStr) + '</strong>') : '—') + '</td>' +
-            '<td class="num">' + (r.paidAmount ? r.paidAmount.toLocaleString('id-ID') : '—') + '</td>' +
-            '<td class="muted">' + esc(r.alamat) + '</td>' +
-            '<td>' + esc(r.pembayaran || 'Tempo') + '</td>' +
-          '</tr>';
-        }
-        return '<tr>' +
-          '<td>' + esc(r.tanggal || '—') + '</td>' +
-          '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
-          '<td class="toko">' + esc(r.customer) + '</td>' +
-          '<td>' + esc(r.sales) + '</td>' +
-          '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
-          '<td>' + statusBadgeCek(r) + '</td>' +
-          '<td class="num">' + r.items + '</td>' +
-          '<td class="muted">' + esc(r.alamat) + '</td>' +
-          '<td>' + esc(r.pembayaran || 'Cash') + '</td>' +
-        '</tr>';
-      }).join('');
-      tbody.innerHTML = html;
+      // Render hanya baris yang terlihat di viewport (virtualisasi) — jauh lebih ringan untuk data banyak
+      cekVirtual.setData(rows);
       info.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') + '</strong> faktur · ' +
         (isTempo ? ('Tempo / Piutang · jatuh tempo ' + CEK_TEMPO_DAYS + ' hari setelah transaksi') : 'Faktur Dropping dari Uang Masuk (penjualan cash)');
     }
@@ -4268,19 +4508,21 @@
       document.getElementById('cekSearchInput').value = '';
       document.getElementById('cekFilterStatus').value = 'all';
       document.getElementById('cekFilterBulan').value = 'all';
+      cekBulanUserSet = true; // reset manual = pilihan sengaja "Semua Bulan"
       renderCekTable();
     }
 
-    function downloadCekExcel() {
-      if (!lastCekRows.length) {
+    function downloadCekExcel(scope) {
+      const isTempo = cekSub === 'tempo';
+      const rows = (scope === 'all') ? buildCekFakturList(isTempo ? 'TEMPO' : 'CASH') : lastCekRows;
+      if (!rows.length) {
         alert('Tidak ada data untuk diunduh.');
         return;
       }
-      const isTempo = cekSub === 'tempo';
       const aoa = [];
       if (isTempo) {
         aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Jatuh Tempo', 'Status', 'Umur Overdue (hari)', 'Sudah Bayar', 'Alamat', 'Pembayaran']);
-        lastCekRows.forEach(r => {
+        rows.forEach(r => {
           const st = r.statusCek === 'Overdue' ? ('OVERDUE ' + r.umurOverdue + ' hr') : r.statusCek;
           aoa.push([
             r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
@@ -4291,7 +4533,7 @@
         });
       } else {
         aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Status Bayar', 'Jml Item', 'Alamat', 'Pembayaran']);
-        lastCekRows.forEach(r => {
+        rows.forEach(r => {
           aoa.push([
             r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
             r.statusCek, r.items, r.alamat || '', r.pembayaran || 'Cash'
@@ -4303,7 +4545,7 @@
       XLSX.utils.book_append_sheet(wb, ws, isTempo ? 'Cek Tempo' : 'Cek Cash');
       const stamp = new Date();
       const pad = n => String(n).padStart(2, '0');
-      XLSX.writeFile(wb, 'CekData_' + (isTempo ? 'Tempo' : 'Cash') + '_' +
+      XLSX.writeFile(wb, 'CekData_' + (isTempo ? 'Tempo' : 'Cash') + '_' + (scope === 'all' ? 'Semua_' : '') +
         stamp.getFullYear() + pad(stamp.getMonth() + 1) + pad(stamp.getDate()) + '.xlsx');
     }
 
@@ -4316,7 +4558,7 @@
       const st = document.getElementById('cekFilterStatus');
       if (st) st.addEventListener('change', renderCekTable);
       const bl = document.getElementById('cekFilterBulan');
-      if (bl) bl.addEventListener('change', renderCekTable);
+      if (bl) bl.addEventListener('change', function() { cekBulanUserSet = true; renderCekTable(); });
       populateCekStatusOptions(cekSub);
     });
 
@@ -4476,10 +4718,15 @@
                 const dates = Array.from(dateSet).sort();
                 const months = Array.from(monthSet).sort();
 
+                const lastMonthKey = months.length ? months[months.length - 1] : null;
+
                 filterTanggal.innerHTML = '<option value="">Semua tanggal</option>' +
                     dates.map(k => `<option value="${k}">${fmtDateShort(new Date(k+'T00:00:00'))}</option>`).join('');
                 filterBulan.innerHTML = '<option value="">Semua bulan</option>' +
-                    months.map(k => `<option value="${k}">${fmtMonthLabel(k)}</option>`).join('');
+                    months.map(k => `<option value="${k}">${fmtMonthLabel(k)}${k === lastMonthKey ? ' (terbaru)' : ''}</option>`).join('');
+
+                // Default: langsung tampilkan bulan terakhir dari file yang baru diproses
+                if (lastMonthKey) filterBulan.value = lastMonthKey;
             }
 
             filterTanggal.addEventListener('change', renderTable);
