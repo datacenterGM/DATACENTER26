@@ -1708,6 +1708,8 @@
             id: SUPABASE_ROW_ID,
             all_rows: allRows,
             sales_rows: (typeof salesRows !== 'undefined' ? salesRows : []),
+            rapikan_rows: (window.__rapGetCleanRows && window.__rapGetCleanRows()) || [],
+            harga_beli_rows: (window.__rapGetPriceRows && window.__rapGetPriceRows()) || [],
             updated_at: new Date().toISOString()
           });
         if (error) throw error;
@@ -1726,7 +1728,7 @@
         setCloudStatus('Mengambil data dari cloud…', false);
         const { data, error } = await supabaseClient
           .from('app_data')
-          .select('all_rows, sales_rows, updated_at')
+          .select('all_rows, sales_rows, rapikan_rows, harga_beli_rows, updated_at')
           .eq('id', SUPABASE_ROW_ID)
           .maybeSingle();
         if (error) throw error;
@@ -1815,11 +1817,13 @@
 
     function buildBackupPayload(){
       return {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         app: 'DATACENTER',
         cashInflow: allRows || [],
-        penjualan: (typeof salesRows !== 'undefined' ? salesRows : [])
+        penjualan: (typeof salesRows !== 'undefined' ? salesRows : []),
+        rapikan: (window.__rapGetCleanRows && window.__rapGetCleanRows()) || [],
+        hargaBeli: (window.__rapGetPriceRows && window.__rapGetPriceRows()) || []
       };
     }
 
@@ -1997,6 +2001,50 @@
         console.warn('Gagal hapus data penjualan di IndexedDB:', err);
       }
     }
+
+    // ---- Persistensi tab "Rapikan Data" (data mentah hasil rapikan + daftar harga beli) ----
+    const DB_KEY_RAPIKAN = 'rapikanCleanRows';
+    const DB_KEY_HARGA_BELI = 'rapikanPriceRows';
+
+    async function saveGenericToDB(key, value) {
+      try {
+        const db = await openDB();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          tx.objectStore(DB_STORE).put(value, key);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (err) {
+        console.warn('Gagal simpan ke IndexedDB (' + key + '):', err);
+      }
+    }
+
+    async function loadGenericFromDB(key) {
+      try {
+        const db = await openDB();
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const req = tx.objectStore(DB_STORE).get(key);
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        });
+      } catch (err) {
+        console.warn('Gagal baca dari IndexedDB (' + key + '):', err);
+        return [];
+      }
+    }
+
+    // Dipanggil setiap kali cleanRows / priceRows di tab Rapikan berubah:
+    // simpan ke IndexedDB (persisten lokal) + jadwalkan sync ke cloud & backup folder.
+    function persistRapikanState() {
+      const clean = (window.__rapGetCleanRows && window.__rapGetCleanRows()) || [];
+      const price = (window.__rapGetPriceRows && window.__rapGetPriceRows()) || [];
+      saveGenericToDB(DB_KEY_RAPIKAN, clean);
+      saveGenericToDB(DB_KEY_HARGA_BELI, price);
+      queueCloudSync();
+    }
+    window.persistRapikanState = persistRapikanState;
 
     const fileInput = document.getElementById('fileInput');
     const fileInputMain = document.getElementById('fileInputMain');
@@ -3162,11 +3210,13 @@
 
     function saveBackupJson() {
       const payload = {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         app: 'DATACENTER',
         cashInflow: allRows || [],
-        penjualan: salesRows || []
+        penjualan: salesRows || [],
+        rapikan: (window.__rapGetCleanRows && window.__rapGetCleanRows()) || [],
+        hargaBeli: (window.__rapGetPriceRows && window.__rapGetPriceRows()) || []
       };
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
       const a = document.createElement('a');
@@ -3191,9 +3241,11 @@
           : Array.isArray(data.allRows) ? data.allRows : [];
         const sales = Array.isArray(data.penjualan) ? data.penjualan
           : Array.isArray(data.salesRows) ? data.salesRows : [];
+        const rapikan = Array.isArray(data.rapikan) ? data.rapikan : [];
+        const hargaBeli = Array.isArray(data.hargaBeli) ? data.hargaBeli : [];
 
-        if (!cash.length && !sales.length) {
-          alert('File JSON tidak berisi data Uang Masuk / Penjualan.');
+        if (!cash.length && !sales.length && !rapikan.length && !hargaBeli.length) {
+          alert('File JSON tidak berisi data Uang Masuk / Penjualan / Rapikan.');
           return;
         }
 
@@ -3217,8 +3269,18 @@
           populateSalesFilters();
           doSalesSearch();
         }
+        if (rapikan.length && window.__rapSetCleanRows) {
+          window.__rapSetCleanRows(rapikan);
+        }
+        if (hargaBeli.length && window.__rapSetPriceRows) {
+          window.__rapSetPriceRows(hargaBeli);
+        }
+        if (rapikan.length || hargaBeli.length) {
+          saveGenericToDB(DB_KEY_RAPIKAN, rapikan);
+          saveGenericToDB(DB_KEY_HARGA_BELI, hargaBeli);
+        }
         document.getElementById('tabsBar').style.display = 'flex';
-        alert('Backup berhasil dimuat.\nUang Masuk: ' + cash.length.toLocaleString('id-ID') + ' baris\nPenjualan: ' + sales.length.toLocaleString('id-ID') + ' baris');
+        alert('Backup berhasil dimuat.\nUang Masuk: ' + cash.length.toLocaleString('id-ID') + ' baris\nPenjualan: ' + sales.length.toLocaleString('id-ID') + ' baris\nRapikan Data: ' + rapikan.length.toLocaleString('id-ID') + ' baris\nHarga Beli: ' + hargaBeli.length.toLocaleString('id-ID') + ' produk');
       } catch (err) {
         console.error(err);
         alert('Gagal memuat JSON: ' + (err.message || err));
@@ -3544,6 +3606,24 @@
 
       if ((saved && saved.length) || (savedSales && savedSales.length)) {
         document.getElementById('tabsBar').style.display = 'flex';
+      }
+
+      // 3) Data tab "Rapikan Data" (cleanRows + harga beli): prioritaskan cloud, fallback IndexedDB lokal
+      let savedRapikan = null, savedHargaBeli = null;
+      if (cloud && (Array.isArray(cloud.rapikan_rows) || Array.isArray(cloud.harga_beli_rows))) {
+        savedRapikan = Array.isArray(cloud.rapikan_rows) ? cloud.rapikan_rows : [];
+        savedHargaBeli = Array.isArray(cloud.harga_beli_rows) ? cloud.harga_beli_rows : [];
+        saveGenericToDB(DB_KEY_RAPIKAN, savedRapikan);
+        saveGenericToDB(DB_KEY_HARGA_BELI, savedHargaBeli);
+      } else {
+        savedRapikan = await loadGenericFromDB(DB_KEY_RAPIKAN);
+        savedHargaBeli = await loadGenericFromDB(DB_KEY_HARGA_BELI);
+      }
+      if (savedRapikan && savedRapikan.length && window.__rapSetCleanRows) {
+        window.__rapSetCleanRows(savedRapikan);
+      }
+      if (savedHargaBeli && savedHargaBeli.length && window.__rapSetPriceRows) {
+        window.__rapSetPriceRows(savedHargaBeli);
       }
     })();
 
@@ -4156,6 +4236,7 @@
                         buildFilters(cleanRows);
                         renderTable();
                         setStatus('Berhasil merapikan ' + rows.length + ' baris data.', 'ok');
+                        if (window.persistRapikanState) window.persistRapikanState();
                     }catch(err){
                         console.error(err);
                         setStatus('Gagal membaca file: ' + err.message, 'err');
@@ -4403,9 +4484,9 @@
                     }
                 });
                 renderTable();
+                if (window.persistRapikanState) window.persistRapikanState();
                 return { matched, total: cleanRows.length, unmatched: Array.from(unmatched) };
             };
-
             // ============================================================
             // BAGIAN 2: Rapikan Data Harga Beli
             // ============================================================
@@ -4460,6 +4541,7 @@
                 }catch(err){
                     console.error('Gagal menyimpan data harga beli:', err);
                 }
+                if (window.persistRapikanState) window.persistRapikanState();
             }
 
             function mergePriceLists(oldRows, freshRows){
@@ -4603,6 +4685,7 @@
                 applyHBBtn.disabled = true;
                 resetHBBtn.style.display = 'none';
                 setStatusHB('Data harga beli tersimpan sudah dihapus.', 'ok');
+                if (window.persistRapikanState) window.persistRapikanState();
             });
 
             applyHBBtn.addEventListener('click', () => {
@@ -4645,6 +4728,44 @@
                 });
             });
         
+            // ===== Bridge untuk backup/restore (dipanggil dari luar IIFE ini) =====
+            window.__rapGetCleanRows = () => cleanRows;
+            window.__rapSetCleanRows = (rows) => {
+                cleanRows = Array.isArray(rows) ? rows : [];
+                window.cleanRows = cleanRows;
+                if (cleanRows.length) {
+                    buildFilters(cleanRows);
+                    renderTable();
+                    setStatus('Memuat ' + cleanRows.length + ' baris data tersimpan sebelumnya.', 'ok');
+                }
+            };
+            window.__rapGetPriceRows = () => priceRows.map(({Produk, HargaBeli}) => ({Produk, HargaBeli}));
+            window.__rapSetPriceRows = (rows) => {
+                priceRows = Array.isArray(rows) ? rows.map(r => ({ ...r, editing: false })) : [];
+                try { localStorage.setItem(HB_STORAGE_KEY, JSON.stringify(window.__rapGetPriceRows())); } catch(err) {}
+                renderHBTable();
+                if (priceRows.length) {
+                    applyHBBtn.disabled = false;
+                    resetHBBtn.style.display = 'inline-block';
+                }
+            };
+
+            // ===== Muat kembali data Rapikan yang tersimpan (IndexedDB lokal), kalau ada =====
+            // Ini fallback untuk kondisi offline / belum sempat ditarik dari cloud saat startup.
+            (async function restoreRapikanFromLocalDB(){
+                try {
+                    if (typeof loadGenericFromDB !== 'function') return;
+                    const savedClean = await loadGenericFromDB(DB_KEY_RAPIKAN);
+                    const savedPrice = await loadGenericFromDB(DB_KEY_HARGA_BELI);
+                    if (Array.isArray(savedClean) && savedClean.length && !cleanRows.length) {
+                        window.__rapSetCleanRows(savedClean);
+                    }
+                    if (Array.isArray(savedPrice) && savedPrice.length && !priceRows.length) {
+                        window.__rapSetPriceRows(savedPrice);
+                    }
+                } catch (err) { console.warn('Gagal muat data Rapikan tersimpan:', err); }
+            })();
+
     })();
 
 
