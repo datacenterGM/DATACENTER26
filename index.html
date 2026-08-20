@@ -495,7 +495,11 @@
             <div class="empty-state" id="cekEmpty" style="display:none;">
                 <div class="big">🔍</div>
                 <div><strong>Belum ada data</strong></div>
-                <div class="hint">Sub-tab <b>Cash</b> mengambil faktur <b>Dropping</b> dari tab Uang Masuk.<br>Sub-tab <b>Tempo</b> = faktur Piutang / penjualan Tempo (jatuh tempo 12 hari).<br>Kolom Pembayaran diisi dari kolom Bagian di Uang Masuk (Dropping / Piutang).</div>
+                <div class="hint">
+                    Sub-tab <b>Cash</b> = faktur <b>Cash Dropping</b> dari tab Uang Masuk.<br>
+                    Sub-tab <b>Tempo</b> = faktur dari Data Penjualan yang pembayarannya <b>bukan Cash</b> (kosong / Tempo / Kredit) <b>atau</b> faktur Piutang di Uang Masuk.<br>
+                    Pastikan di tab <b>Data Penjualan</b> sudah ada data dan kolom Pembayaran terisi (atau biarkan kosong agar dianggap Tempo).
+                </div>
             </div>
         </div>
 
@@ -2171,6 +2175,7 @@
                         customer: r.customer || '',
                         alamat: r.alamat || '',
                         pembayaranSales: r.pembayaran || '',
+                        month: r.month || monthNameFromDate(parseSalesDate(r.tanggal)),
                         nominal: 0,
                         items: 0
                     });
@@ -2182,10 +2187,15 @@
                 if (td && (!g.tglDate || td < g.tglDate)) {
                     g.tglDate = td;
                     g.tanggal = r.tanggal;
+                    g.month = r.month || monthNameFromDate(td);
                 }
                 if (!g.customer && r.customer) g.customer = r.customer;
                 if (!g.sales && r.sales) g.sales = r.sales;
                 if (!g.alamat && r.alamat) g.alamat = r.alamat;
+                // keep a non-empty pembayaran if later rows have it
+                if ((!g.pembayaranSales || g.pembayaranSales === '') && r.pembayaran) {
+                    g.pembayaranSales = r.pembayaran;
+                }
             }
             salesFakturMap = map;
             salesFakturMapDirty = false;
@@ -2262,12 +2272,12 @@
                 const qty = r.jumlah || 0;
                 const tot = r.total || 0;
                 const cost = (r.hargaBeli || 0) * qty;
-                const pay = (r.pembayaran || '').toUpperCase();
+                const pay = (r.pembayaran || '').toUpperCase().trim();
                 if (isFitri) {
                     nomFitri += tot;
                     costFitri += cost;
-                    if (pay === 'CASH') qtyFitriCash += qty;
-                    else if (pay === 'TEMPO') qtyFitriTempo += qty;
+                    if (pay === 'CASH' || pay.startsWith('CASH')) qtyFitriCash += qty;
+                    else if (pay === 'TEMPO' || pay.startsWith('TEMPO') || pay.includes('TEMPO') || pay === 'KREDIT' || pay === 'CREDIT') qtyFitriTempo += qty;
                 } else {
                     nomRupa += tot;
                     costRupa += cost;
@@ -2968,12 +2978,26 @@
                     out.push(g);
                 }
             } else {
-                // TEMPO
-                const tempoKeys = new Set();
-                for (const [fk, s] of salesMap.entries()) {
-                    const pay = String(s.pembayaranSales || '').trim().toUpperCase();
-                    if (pay === 'TEMPO') tempoKeys.add(fk);
+                // TEMPO – deteksi sangat longgar supaya data dari Penjualan ikut muncul
+                // 1. Semua faktur di Uang Masuk yang section-nya mengandung PIUTANG
+                // 2. Semua faktur di Data Penjualan yang pembayarannya BUKAN Cash murni
+                //    (kosong / Tempo / Kredit / Piutang / dll → dianggap Tempo)
+                function isCashPay(p) {
+                    const pay = String(p || '').trim().toUpperCase();
+                    return pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
                 }
+                function isTempoPay(p) {
+                    const pay = String(p || '').trim().toUpperCase();
+                    if (!pay) return true; // kosong = anggap Tempo (lebih aman untuk cek piutang)
+                    if (isCashPay(pay)) return false;
+                    return true; // selain Cash → Tempo
+                }
+                const tempoKeys = new Set();
+                // dari Data Penjualan
+                for (const [fk, s] of salesMap.entries()) {
+                    if (isTempoPay(s.pembayaranSales)) tempoKeys.add(fk);
+                }
+                // dari Uang Masuk (bagian Piutang)
                 for (const r of allRows) {
                     const sec = String(r.section || '').toUpperCase();
                     if (sec.includes('PIUTANG')) {
@@ -3009,9 +3033,11 @@
                         if (!toko && r.toko) toko = r.toko;
                         if (!alamat && r.alamat) alamat = r.alamat;
                     }
+                    // Lewati hanya jika faktur ini murni Cash Dropping DAN di penjualan juga Cash
                     const onlyDropping = isDropping && !isPiutang;
-                    const isSalesTempo = s && String(s.pembayaranSales || '').toUpperCase() === 'TEMPO';
+                    const isSalesTempo = !s || isTempoPay(s.pembayaranSales);
                     if (onlyDropping && !isSalesTempo) continue;
+
                     const g = {
                         noFaktur: fk,
                         tanggal: s ? s.tanggal : dateLabel,
@@ -3024,7 +3050,7 @@
                         paidAmount: paidAmount,
                         tagihanUM: tagihanUM,
                         paid: hasLunas || (tagihanUM > 0 && paidAmount >= tagihanUM - 1),
-                        pembayaran: isPiutang ? 'Piutang' : 'Tempo'
+                        pembayaran: isPiutang ? 'Piutang' : (s && isCashPay(s.pembayaranSales) ? 'Cash' : 'Tempo')
                     };
                     const due = g.tglDate ? addDays(g.tglDate, CEK_TEMPO_DAYS) : null;
                     g.jatuhTempo = due;
@@ -3046,7 +3072,8 @@
                         g.umurOverdue = 0;
                         g.umurOverdueStr = '—';
                     }
-                    g.month = monthNameFromDate(g.tglDate);
+                    // prioritaskan month dari salesMap
+                    g.month = (s && s.month) ? s.month : monthNameFromDate(g.tglDate);
                     out.push(g);
                 }
             }
@@ -3107,14 +3134,30 @@
             const sel = document.getElementById('cekFilterBulan');
             if (!sel) return;
             const cur = sel.value;
-            const months = [...new Set(rows.map(r => r.month).filter(Boolean))];
+            // Ambil bulan dari hasil build + (untuk Tempo) juga dari salesRows agar dropdown selalu lengkap
+            let months = [...new Set(rows.map(r => r.month).filter(Boolean))];
+            if (cekSub === 'tempo' && salesRows && salesRows.length) {
+                salesRows.forEach(r => {
+                    const pay = String(r.pembayaran || '').trim().toUpperCase();
+                    const isCash = pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
+                    // selain Cash murni → masuk Tempo (termasuk kosong)
+                    if (!isCash && r.month) months.push(r.month);
+                });
+                months = [...new Set(months)];
+            }
             months.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
             const lastMonth = months.length ? months[months.length - 1] : null;
             sel.innerHTML = '<option value="all">Semua Bulan</option>' +
                 months.map(m => '<option value="' + esc(m) + '">' + esc(m) + (m === lastMonth ? ' (terbaru)' : '') +
                     '</option>').join('');
-            if (months.includes(cur)) { sel.value = cur; } else if (!cekBulanUserSet && lastMonth) { sel.value =
-                    lastMonth; } else { sel.value = 'all'; }
+            // Jangan paksa pindah ke bulan terbaru kalau user sudah pernah memilih (termasuk "Semua Bulan")
+            if (months.includes(cur)) {
+                sel.value = cur;
+            } else if (!cekBulanUserSet && lastMonth) {
+                sel.value = lastMonth;
+            } else {
+                sel.value = 'all';
+            }
         }
 
         function renderCekTable() {
@@ -3213,8 +3256,14 @@
             }
 
             if (!rows.length) {
+                let msg = 'Tidak ada data yang cocok dengan filter saat ini.';
+                if (isTempo && hasSales) {
+                    msg = 'Tidak ada faktur Tempo yang cocok.<br><span style="font-size:0.8rem">Semua faktur di Data Penjualan mungkin bertipe <b>Cash</b>, atau filter bulan/status terlalu ketat. Coba pilih <b>Semua Bulan</b> + <b>Semua Status</b>.</span>';
+                } else if (isTempo && !hasSales) {
+                    msg = 'Belum ada Data Penjualan. Upload di tab <b>Data Penjualan</b> atau pastikan file Uang Masuk punya bagian <b>Piutang Tempo</b>.';
+                }
                 tbody.innerHTML =
-                    '<tr><td colspan="11" style="text-align:center;padding:28px;color:var(--muted)">Tidak ada data yang cocok.</td></tr>';
+                    '<tr><td colspan="11" style="text-align:center;padding:28px;color:var(--muted)">' + msg + '</td></tr>';
                 info.innerHTML = 'Menampilkan <strong>0</strong> faktur';
                 cekVirtual.setData([]);
                 return;
@@ -3378,12 +3427,28 @@
                 if (v === null || v === undefined || v === '') return null;
                 if (v instanceof Date && !isNaN(v)) return v;
                 if (typeof v === 'number') {
-                    const d = XLSX.SSF.parse_date_code(v);
-                    if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0);
-                    return null;
+                    // Excel serial atau timestamp
+                    if (v > 20000 && v < 100000) {
+                        const d = XLSX.SSF.parse_date_code(v);
+                        if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0);
+                    }
+                    const d2 = new Date(v);
+                    return isNaN(d2) ? null : d2;
                 }
                 if (typeof v === 'string') {
-                    const d = new Date(v.replace(' ', 'T'));
+                    const str = v.trim();
+                    // DD/MM/YYYY atau DD-MM-YYYY
+                    let m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+                    if (m) {
+                        let day = parseInt(m[1], 10),
+                            mo = parseInt(m[2], 10) - 1,
+                            y = parseInt(m[3], 10);
+                        if (y < 100) y += 2000;
+                        const dt = new Date(y, mo, day);
+                        return isNaN(dt) ? null : dt;
+                    }
+                    // ISO / YYYY-MM-DD
+                    const d = new Date(str.replace(' ', 'T'));
                     if (!isNaN(d)) return d;
                 }
                 return null;
@@ -3430,12 +3495,28 @@
 
             function pad2(n) { return String(n).padStart(2, '0'); }
 
-            function dateKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+            function ensureDate(d) {
+                if (d instanceof Date && !isNaN(d)) return d;
+                return toDate(d);
+            }
 
-            function monthKey(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1); }
+            function dateKey(d) {
+                const dt = ensureDate(d);
+                if (!dt) return '';
+                return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+            }
 
-            function fmtDateShort(d) { return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + String(d.getFullYear())
-                    .slice(-2); }
+            function monthKey(d) {
+                const dt = ensureDate(d);
+                if (!dt) return '';
+                return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1);
+            }
+
+            function fmtDateShort(d) {
+                const dt = ensureDate(d);
+                if (!dt) return '';
+                return pad2(dt.getDate()) + '/' + pad2(dt.getMonth() + 1) + '/' + String(dt.getFullYear()).slice(-2);
+            }
 
             function fmtMonthLabel(key) {
                 const [y, m] = key.split('-');
@@ -3445,13 +3526,22 @@
             function buildFilters(rows) {
                 const dateSet = new Set();
                 const monthSet = new Set();
-                rows.forEach(r => { dateSet.add(dateKey(r.Tanggal));
-                    monthSet.add(monthKey(r.Tanggal)); });
+                rows.forEach(r => {
+                    // pastikan Tanggal jadi Date (data dari JSON/cloud sering berupa string)
+                    if (r.Tanggal && !(r.Tanggal instanceof Date)) {
+                        const parsed = toDate(r.Tanggal);
+                        if (parsed) r.Tanggal = parsed;
+                    }
+                    const dk = dateKey(r.Tanggal);
+                    const mk = monthKey(r.Tanggal);
+                    if (dk) dateSet.add(dk);
+                    if (mk) monthSet.add(mk);
+                });
                 const dates = Array.from(dateSet).sort();
                 const months = Array.from(monthSet).sort();
                 const lastMonthKey = months.length ? months[months.length - 1] : null;
                 filterTanggal.innerHTML = '<option value="">Semua tanggal</option>' +
-                    dates.map(k => `<option value="${k}">${fmtDateShort(new Date(k+'T00:00:00'))}</option>`).join('');
+                    dates.map(k => `<option value="${k}">${fmtDateShort(new Date(k + 'T00:00:00'))}</option>`).join('');
                 filterBulan.innerHTML = '<option value="">Semua bulan</option>' +
                     months.map(k => `<option value="${k}">${fmtMonthLabel(k)}${k === lastMonthKey ? ' (terbaru)' : ''}</option>`)
                     .join('');
@@ -3782,12 +3872,24 @@
             // Bridge untuk persistensi
             window.__rapGetCleanRows = () => cleanRows;
             window.__rapSetCleanRows = (rows) => {
-                cleanRows = Array.isArray(rows) ? rows : [];
+                cleanRows = Array.isArray(rows) ? rows.map(r => {
+                    const copy = { ...r };
+                    if (copy.Tanggal && !(copy.Tanggal instanceof Date)) {
+                        const parsed = toDate(copy.Tanggal);
+                        if (parsed) copy.Tanggal = parsed;
+                    }
+                    return copy;
+                }) : [];
                 window.cleanRows = cleanRows;
                 if (cleanRows.length) {
-                    buildFilters(cleanRows);
-                    renderTable();
-                    setStatus('Memuat ' + cleanRows.length + ' baris data tersimpan sebelumnya.', 'ok');
+                    try {
+                        buildFilters(cleanRows);
+                        renderTable();
+                        setStatus('Memuat ' + cleanRows.length + ' baris data tersimpan sebelumnya.', 'ok');
+                    } catch (err) {
+                        console.warn('Gagal render data rapikan tersimpan:', err);
+                        setStatus('Data rapikan dimuat (' + cleanRows.length + ' baris), tapi filter gagal dibangun.', 'err');
+                    }
                 }
             };
             window.__rapGetPriceRows = () => priceRows.map(({ Produk, HargaBeli }) => ({ Produk, HargaBeli }));
@@ -3928,6 +4030,9 @@
                 document.getElementById('tabBtnCek').classList.remove('active');
             }
             if (tab === 'cek') {
+                // pastikan indeks selalu segar saat buka tab Cek
+                cekFakturCacheDirty = true;
+                salesFakturMapDirty = true;
                 renderCekTable();
             }
         }
@@ -3983,6 +4088,8 @@
                 savedSales = Array.isArray(cloud.sales_rows) ? cloud.sales_rows : [];
                 allRows = saved;
                 salesRows = savedSales;
+                invalidateFakturIndex();
+                invalidateSalesIndex();
                 saveRowsToDB(allRows, DB_KEY);
                 saveRowsToDB(salesRows, DB_KEY_SALES);
             } else {
@@ -4001,6 +4108,7 @@
             if (savedSales && savedSales.length) {
                 salesRows = savedSales.map(r => r.month ? r : Object.assign({}, r, { month: detectMonth(r.sheet, r
                         .tanggal) || 'Lainnya' }));
+                invalidateSalesIndex(); // WAJIB: agar Cek Data → Tempo membangun ulang indeks
                 document.getElementById('salesEmptyState').style.display = 'none';
                 document.getElementById('salesFileName').textContent = 'Data tersimpan (' + salesRows.length
                     .toLocaleString('id-ID') + ' baris)';
