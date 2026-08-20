@@ -142,6 +142,7 @@
         .search-bar input { flex: 1; min-width: 180px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 0.9rem; outline: none; min-height: 44px; touch-action: manipulation; }
         .search-bar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
         .search-bar select { background: var(--input-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 10px; color: var(--text); font-size: 0.85rem; outline: none; min-height: 44px; touch-action: manipulation; }
+        .search-bar select[multiple] { min-height: 88px; padding: 6px 8px; vertical-align: top; }
         .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 600; font-size: 0.85rem; cursor: pointer; min-height: 44px; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
 
@@ -477,6 +478,9 @@
                 <select id="cekFilterStatus"><option value="all">Semua Status</option></select>
                 <button class="btn" onclick="renderCekTable()">Cari</button>
                 <button class="btn btn-outline" onclick="resetCekSearch()">Reset</button>
+            </div>
+            <div id="cekBulanHint" style="display:none;margin:-6px 0 8px;color:var(--muted);font-size:0.75rem;">
+                📅 Sub-tab Tempo: tahan <b>Ctrl</b> (Windows) / <b>⌘</b> (Mac) lalu klik untuk memilih <b>beberapa bulan</b> sekaligus (mis. Juli + Agustus) — cocok untuk piutang yang jatuh tempo lintas bulan.
             </div>
 
             <div style="margin:-4px 0 10px;color:var(--muted);font-size:0.78rem;">
@@ -2885,11 +2889,25 @@
             document.getElementById('cekSubCash').classList.toggle('active', sub === 'cash');
             document.getElementById('cekSubTempo').classList.toggle('active', sub === 'tempo');
             populateCekStatusOptions(sub);
-            // Saat pindah ke Tempo, mulai dari Semua Bulan supaya data tidak "hilang" karena filter bulan
-            if (sub === 'tempo') {
-                const bl = document.getElementById('cekFilterBulan');
-                if (bl) bl.value = 'all';
-                cekBulanUserSet = true;
+            // Mode multi-bulan hanya di Tempo (piutang sering lintas bulan)
+            const bl = document.getElementById('cekFilterBulan');
+            const hint = document.getElementById('cekBulanHint');
+            if (bl) {
+                if (sub === 'tempo') {
+                    bl.multiple = true;
+                    bl.size = Math.min(6, Math.max(3, bl.options.length || 3));
+                    bl.title = 'Tahan Ctrl / ⌘ untuk pilih beberapa bulan';
+                    // default Semua Bulan
+                    Array.from(bl.options).forEach(o => { o.selected = (o.value === 'all'); });
+                    cekBulanUserSet = true;
+                    if (hint) hint.style.display = 'block';
+                } else {
+                    bl.multiple = false;
+                    bl.size = 1;
+                    bl.title = '';
+                    bl.value = 'all';
+                    if (hint) hint.style.display = 'none';
+                }
             }
             cekFakturCacheDirty = true;
             renderCekTable();
@@ -3172,17 +3190,28 @@
             }, { rowHeight: 40, colspan: 11 }
         );
 
+        function getCekSelectedBulan() {
+            const sel = document.getElementById('cekFilterBulan');
+            if (!sel) return ['all'];
+            if (sel.multiple) {
+                const vals = Array.from(sel.selectedOptions).map(o => o.value);
+                if (!vals.length || vals.includes('all')) return ['all'];
+                return vals;
+            }
+            return [sel.value || 'all'];
+        }
+
         function populateCekFilterBulan(rows) {
             const sel = document.getElementById('cekFilterBulan');
             if (!sel) return;
-            const cur = sel.value;
+            // simpan pilihan saat ini (multi atau single)
+            const prevSelected = new Set(getCekSelectedBulan());
             // Ambil bulan dari hasil build + (untuk Tempo) juga dari salesRows agar dropdown selalu lengkap
             let months = [...new Set(rows.map(r => r.month).filter(Boolean))];
             if (cekSub === 'tempo' && salesRows && salesRows.length) {
                 salesRows.forEach(r => {
                     const pay = String(r.pembayaran || '').trim().toUpperCase();
                     const isCash = pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
-                    // selain Cash murni → masuk Tempo (termasuk kosong)
                     if (!isCash && r.month) months.push(r.month);
                 });
                 months = [...new Set(months)];
@@ -3192,13 +3221,30 @@
             sel.innerHTML = '<option value="all">Semua Bulan</option>' +
                 months.map(m => '<option value="' + esc(m) + '">' + esc(m) + (m === lastMonth ? ' (terbaru)' : '') +
                     '</option>').join('');
-            // Jangan paksa pindah ke bulan terbaru kalau user sudah pernah memilih (termasuk "Semua Bulan")
-            if (months.includes(cur)) {
-                sel.value = cur;
-            } else if (!cekBulanUserSet && lastMonth) {
-                sel.value = lastMonth;
+
+            // restore pilihan sebelumnya
+            const optList = Array.from(sel.options);
+            let restored = false;
+            if (cekSub === 'tempo' && sel.multiple) {
+                optList.forEach(o => {
+                    if (prevSelected.has(o.value) && o.value !== 'all') {
+                        o.selected = true;
+                        restored = true;
+                    }
+                });
+                if (!restored) {
+                    // default: Semua Bulan
+                    optList.forEach(o => { o.selected = (o.value === 'all'); });
+                } else {
+                    // pastikan "Semua Bulan" tidak ikut terpilih bareng bulan lain
+                    optList.forEach(o => { if (o.value === 'all') o.selected = false; });
+                }
+                sel.size = Math.min(6, Math.max(3, sel.options.length));
             } else {
-                sel.value = 'all';
+                const cur = prevSelected.has('all') ? 'all' :
+                    ([...prevSelected].find(v => months.includes(v)) || (!cekBulanUserSet && lastMonth ? lastMonth : 'all'));
+                sel.value = cur;
+                sel.size = 1;
             }
         }
 
@@ -3210,13 +3256,16 @@
             populateCekFilterBulan(rows);
             const q = (document.getElementById('cekSearchInput').value || '').trim().toLowerCase();
             const stFilter = (document.getElementById('cekFilterStatus').value || 'all');
-            const bulanFilter = (document.getElementById('cekFilterBulan').value || 'all');
+            const bulanList = getCekSelectedBulan();
             if (q) {
                 rows = rows.filter(r =>
                     (r.noFaktur + ' ' + r.customer + ' ' + r.sales + ' ' + r.alamat).toLowerCase().includes(q)
                 );
             }
-            if (bulanFilter !== 'all') rows = rows.filter(r => r.month === bulanFilter);
+            if (!bulanList.includes('all')) {
+                const setBulan = new Set(bulanList);
+                rows = rows.filter(r => setBulan.has(r.month));
+            }
             if (stFilter !== 'all') {
                 rows = rows.filter(r => {
                     if (stFilter === 'lunas') return r.statusCek === 'Lunas';
@@ -3319,7 +3368,14 @@
         function resetCekSearch() {
             document.getElementById('cekSearchInput').value = '';
             document.getElementById('cekFilterStatus').value = 'all';
-            document.getElementById('cekFilterBulan').value = 'all';
+            const bl = document.getElementById('cekFilterBulan');
+            if (bl) {
+                if (bl.multiple) {
+                    Array.from(bl.options).forEach(o => { o.selected = (o.value === 'all'); });
+                } else {
+                    bl.value = 'all';
+                }
+            }
             cekBulanUserSet = true;
             renderCekTable();
         }
@@ -3379,8 +3435,28 @@
             const st = document.getElementById('cekFilterStatus');
             if (st) st.addEventListener('change', renderCekTable);
             const bl = document.getElementById('cekFilterBulan');
-            if (bl) bl.addEventListener('change', function() { cekBulanUserSet = true;
-                renderCekTable(); });
+            if (bl) bl.addEventListener('change', function() {
+                cekBulanUserSet = true;
+                // Di mode multi: kalau user pilih "Semua Bulan", batalkan pilihan bulan lain
+                if (bl.multiple) {
+                    const selected = Array.from(bl.selectedOptions).map(o => o.value);
+                    if (selected.includes('all') && selected.length > 1) {
+                        // Jika "Semua Bulan" baru diklik bersama yang lain → prioritaskan semua
+                        const allOpt = Array.from(bl.options).find(o => o.value === 'all');
+                        const allWasClicked = allOpt && allOpt.selected;
+                        if (allWasClicked) {
+                            Array.from(bl.options).forEach(o => { o.selected = (o.value === 'all'); });
+                        } else {
+                            // kalau bulan lain diklik saat "all" masih selected → matikan "all"
+                            Array.from(bl.options).forEach(o => { if (o.value === 'all') o.selected = false; });
+                        }
+                    }
+                    if (!Array.from(bl.selectedOptions).length) {
+                        Array.from(bl.options).forEach(o => { o.selected = (o.value === 'all'); });
+                    }
+                }
+                renderCekTable();
+            });
             populateCekStatusOptions(cekSub);
         });
 
