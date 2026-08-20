@@ -177,6 +177,75 @@
         .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 600; font-size: 0.85rem; cursor: pointer; min-height: 44px; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
 
+        /* ===== Sales Card View (Neuro style) ===== */
+        .view-toggle { display: inline-flex; gap: 4px; margin-left: 6px; }
+        .view-toggle-btn {
+            padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--card); color: var(--muted); font-weight: 600; font-size: 0.72rem;
+            cursor: pointer; white-space: nowrap; font-family: inherit;
+        }
+        .view-toggle-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .sales-cards-grid {
+            display: none; grid-template-columns: repeat(2, 1fr); gap: 16px;
+            max-height: 68vh; overflow-y: auto; padding: 4px 2px 12px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .sales-cards-grid.show { display: grid; }
+        .sc-invoice {
+            background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+            box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+        }
+        .sc-invoice:hover {
+            transform: translateY(-3px); border-color: var(--accent);
+            box-shadow: 0 8px 24px rgba(0,0,0,.12);
+        }
+        .sc-inv-head {
+            padding: 12px 14px 10px; border-bottom: 1px solid var(--border);
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+            background: var(--th-bg);
+        }
+        .sc-inv-faktur {
+            font-family: ui-monospace, monospace; font-weight: 700; font-size: 0.78rem;
+            color: var(--accent); background: var(--accent-soft); padding: 3px 10px;
+            border-radius: 6px; border: 1px solid var(--border);
+        }
+        .sc-inv-toko { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+        .sc-inv-alamat { font-size: 0.72rem; color: var(--muted); display: block; margin-top: 1px; }
+        .sc-inv-badges { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+        .sc-badge {
+            font-size: 0.68rem; font-weight: 700; padding: 3px 10px; border-radius: 999px;
+            border: 1px solid var(--border); white-space: nowrap;
+        }
+        .sc-badge-sales { background: var(--indigo-bg); color: var(--indigo); }
+        .sc-badge-cash { background: var(--accent-soft); color: var(--accent); }
+        .sc-badge-tempo { background: var(--yellow-bg); color: var(--yellow); }
+        .sc-inv-body { padding: 10px 14px 0; flex: 1; }
+        .sc-inv-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+        .sc-inv-table th {
+            text-align: left; font-size: 0.65rem; text-transform: uppercase; letter-spacing: .04em;
+            color: var(--muted); padding-bottom: 6px; border-bottom: 1px solid var(--border); font-weight: 600;
+        }
+        .sc-inv-table th:last-child { text-align: right; }
+        .sc-inv-table td {
+            padding: 6px 0; border-bottom: 1px solid var(--border); color: var(--muted); vertical-align: middle;
+        }
+        .sc-inv-table tr:last-child td { border-bottom: none; }
+        .sc-inv-table .prod { font-weight: 600; color: var(--text); font-size: 0.78rem; }
+        .sc-inv-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); font-weight: 600; }
+        .sc-inv-table .disc { color: var(--red); font-size: 0.7rem; }
+        .sc-inv-foot {
+            padding: 10px 14px 12px; border-top: 1px solid var(--border); margin-top: 8px;
+            display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap;
+            background: var(--th-bg);
+        }
+        .sc-inv-total-label { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .sc-inv-total-val { font-size: 1.05rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+        .sc-inv-meta { font-size: 0.72rem; color: var(--muted); }
+        @media (max-width: 850px) {
+            .sales-cards-grid { grid-template-columns: 1fr; }
+        }
+
         .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; }
         .badge-lunas { background: var(--green-bg); color: var(--green); }
         .badge-titip { background: var(--yellow-bg); color: var(--yellow); }
@@ -462,6 +531,10 @@
                 <button class="subtab-btn" id="subBtnPay" onclick="switchSalesSub('pay')">💳 Profit Per Produk Per Pembayaran</button>
                 <button class="subtab-btn" id="subBtnSales" onclick="switchSalesSub('sales')">👤 Profit Per Sales</button>
                 <button class="subtab-btn" id="subBtnBulan" onclick="switchSalesSub('bulan')">🗓️ Profit Per Bulan</button>
+                <div class="view-toggle" id="salesViewToggle" style="display:none;">
+                    <button type="button" class="view-toggle-btn active" id="btnViewTable" onclick="setSalesViewMode('table')">☰ Tabel</button>
+                    <button type="button" class="view-toggle-btn" id="btnViewCards" onclick="setSalesViewMode('cards')">▦ Kartu</button>
+                </div>
                 <button class="subtab-dl" id="btnDlProfit" onclick="downloadCurrentSalesExcel('filter')">⬇ Filter</button>
                 <button class="subtab-dl" id="btnDlTransAll" onclick="downloadCurrentSalesExcel('all')">⬇ Semua</button>
             </div>
@@ -470,6 +543,7 @@
                 <table><thead><tr><th>Tanggal</th><th>No Faktur</th><th>Produk</th><th class="num">Jumlah</th><th>Satuan</th><th class="num">Harga Jual</th><th class="num">Disc</th><th class="num">Total</th><th class="num">Nominal Faktur</th><th>Sales</th><th>Customer</th><th>Alamat</th><th>Pembayaran</th><th class="num">Harga Beli</th></tr></thead>
                 <tbody id="salesTbody"></tbody></table>
             </div>
+            <div class="sales-cards-grid" id="salesCardsGrid"></div>
 
             <div class="profit-wrap" id="profitProdukWrap"><div class="profit-head"><span>PROFIT PENJUALAN / PRODUK</span><span class="muted" id="profitProdukPeriod">—</span></div><table class="profit-table"><thead><tr><th>No</th><th>Produk</th><th class="num">Qty</th><th class="num">Total Penjualan</th><th class="num">Total HPP</th><th class="num">Harga Jual</th><th class="num">Harga Beli</th><th class="num">Profit</th></tr></thead><tbody id="profitProdukBody"></tbody></table></div>
             <div class="profit-wrap" id="profitPayWrap"><div class="profit-head"><span>PROFIT PER PRODUK PER PEMBAYARAN</span><span class="muted" id="profitPayPeriod">—</span></div><table class="profit-table"><thead><tr><th>Produk</th><th class="num">Nominal Penjualan Cash</th><th class="num">Nominal Penjualan Tempo</th><th class="num">Profit Tempo</th><th class="num">Profit Cash</th><th class="num">Total Nominal Penjualan</th><th class="num">Total Profit</th></tr></thead><tbody id="profitPayBody"></tbody></table></div>
@@ -2340,15 +2414,131 @@
             document.getElementById('scNomTotal').textContent = (nomFitri + nomRupa).toLocaleString('id-ID');
         }
 
+        let salesViewMode = 'table'; // 'table' | 'cards'
+
+        function setSalesViewMode(mode) {
+            salesViewMode = mode === 'cards' ? 'cards' : 'table';
+            const btnT = document.getElementById('btnViewTable');
+            const btnC = document.getElementById('btnViewCards');
+            if (btnT) btnT.classList.toggle('active', salesViewMode === 'table');
+            if (btnC) btnC.classList.toggle('active', salesViewMode === 'cards');
+            const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+            renderSalesTable(rows);
+        }
+
+        function groupSalesByFaktur(rows) {
+            const map = new Map();
+            for (const r of rows) {
+                const fk = String(r.noFaktur || '').trim();
+                if (!fk) continue;
+                if (!map.has(fk)) {
+                    map.set(fk, {
+                        noFaktur: fk,
+                        tanggal: r.tanggal || '',
+                        customer: r.customer || '',
+                        alamat: r.alamat || '',
+                        sales: r.sales || '',
+                        pembayaran: r.pembayaran || '',
+                        items: [],
+                        total: 0
+                    });
+                }
+                const g = map.get(fk);
+                g.items.push(r);
+                g.total += Number(r.total) || 0;
+                if (!g.customer && r.customer) g.customer = r.customer;
+                if (!g.alamat && r.alamat) g.alamat = r.alamat;
+                if (!g.sales && r.sales) g.sales = r.sales;
+                if (!g.pembayaran && r.pembayaran) g.pembayaran = r.pembayaran;
+                if (!g.tanggal && r.tanggal) g.tanggal = r.tanggal;
+            }
+            return Array.from(map.values());
+        }
+
+        function renderSalesCards(rows) {
+            const grid = document.getElementById('salesCardsGrid');
+            if (!grid) return;
+            const groups = groupSalesByFaktur(rows);
+            if (!groups.length) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">Tidak ada data yang cocok.</div>';
+                grid.classList.add('show');
+                return;
+            }
+            // Batasi render agar tetap ringan (max 200 kartu)
+            const MAX = 200;
+            const slice = groups.slice(0, MAX);
+            let html = '';
+            for (const inv of slice) {
+                const pay = String(inv.pembayaran || '').toUpperCase();
+                const isCash = pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
+                const payBadge = isCash
+                    ? '<span class="sc-badge sc-badge-cash">CASH</span>'
+                    : '<span class="sc-badge sc-badge-tempo">' + esc(inv.pembayaran || 'Tempo') + '</span>';
+                let itemsHtml = '';
+                for (const it of inv.items) {
+                    const disc = Number(it.disc) || 0;
+                    const discHtml = disc > 0
+                        ? ' <span class="disc">−' + disc.toLocaleString('id-ID') + '</span>'
+                        : '';
+                    itemsHtml += '<tr>' +
+                        '<td><span class="prod">' + esc(it.produk) + '</span></td>' +
+                        '<td>' + (Number(it.jumlah) || 0).toLocaleString('id-ID') + ' ' + esc(it.satuan || '') + '</td>' +
+                        '<td>' + (Number(it.hargaJual) || 0).toLocaleString('id-ID') + discHtml + '</td>' +
+                        '<td class="num">' + (Number(it.total) || 0).toLocaleString('id-ID') + '</td>' +
+                        '</tr>';
+                }
+                html += '<div class="sc-invoice">' +
+                    '<div class="sc-inv-head">' +
+                    '<span class="sc-inv-faktur">' + esc(inv.noFaktur) + '</span>' +
+                    '<div><div class="sc-inv-toko">' + esc(inv.customer || '—') + '</div>' +
+                    '<span class="sc-inv-alamat">' + esc(inv.alamat || '') + (inv.tanggal ? ' · ' + esc(inv.tanggal) : '') + '</span></div>' +
+                    '<div class="sc-inv-badges">' +
+                    (inv.sales ? '<span class="sc-badge sc-badge-sales">' + esc(inv.sales) + '</span>' : '') +
+                    payBadge +
+                    '</div></div>' +
+                    '<div class="sc-inv-body"><table class="sc-inv-table"><thead><tr>' +
+                    '<th>Item</th><th>Qty</th><th>Harga</th><th style="text-align:right">Subtotal</th>' +
+                    '</tr></thead><tbody>' + itemsHtml + '</tbody></table></div>' +
+                    '<div class="sc-inv-foot">' +
+                    '<span class="sc-inv-total-label">Total · ' + inv.items.length + ' item</span>' +
+                    '<span class="sc-inv-total-val">' + inv.total.toLocaleString('id-ID') + '</span>' +
+                    '</div></div>';
+            }
+            if (groups.length > MAX) {
+                html += '<div style="grid-column:1/-1;text-align:center;padding:16px;color:var(--muted);font-size:0.82rem">' +
+                    'Menampilkan ' + MAX + ' dari ' + groups.length.toLocaleString('id-ID') +
+                    ' faktur. Perketat filter untuk melihat sisanya.</div>';
+            }
+            grid.innerHTML = html;
+            grid.classList.add('show');
+        }
+
         function renderSalesTable(rows) {
             salesResultInfo.style.display = 'block';
             salesResultInfo.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') +
                 '</strong> dari <strong>' + salesRows.length.toLocaleString('id-ID') + '</strong> transaksi';
             document.getElementById('salesSubtabs').classList.toggle('show', salesRows.length > 0);
+            const viewToggle = document.getElementById('salesViewToggle');
+            if (viewToggle) viewToggle.style.display = (salesRows.length > 0 && currentSalesSub === 'transaksi') ? 'inline-flex' : 'none';
             rebuildFakturNominalMap(rows);
             updateSalesCards(rows);
             lastSalesFiltered = rows;
             if (currentSalesSub !== 'transaksi') return;
+
+            const grid = document.getElementById('salesCardsGrid');
+            if (salesViewMode === 'cards') {
+                salesTableWrap.style.display = 'none';
+                if (grid) {
+                    if (!rows.length) {
+                        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">Tidak ada data yang cocok.</div>';
+                        grid.classList.add('show');
+                    } else {
+                        renderSalesCards(rows);
+                    }
+                }
+                return;
+            }
+            if (grid) { grid.classList.remove('show'); grid.innerHTML = ''; }
             if (!rows.length) {
                 salesTbody.innerHTML =
                     '<tr><td colspan="14" style="text-align:center;padding:32px;color:var(--muted)">Tidak ada data yang cocok.</td></tr>';
@@ -2427,12 +2617,27 @@
             document.getElementById('subBtnPay').classList.toggle('active', sub === 'pay');
             document.getElementById('subBtnSales').classList.toggle('active', sub === 'sales');
             document.getElementById('subBtnBulan').classList.toggle('active', sub === 'bulan');
-            document.getElementById('salesTableWrap').style.display = sub === 'transaksi' ? 'block' : 'none';
+            const viewToggle = document.getElementById('salesViewToggle');
+            if (viewToggle) viewToggle.style.display = sub === 'transaksi' ? 'inline-flex' : 'none';
+            const grid = document.getElementById('salesCardsGrid');
+            if (sub === 'transaksi') {
+                // tampilkan sesuai mode
+                if (salesViewMode === 'cards') {
+                    document.getElementById('salesTableWrap').style.display = 'none';
+                } else {
+                    document.getElementById('salesTableWrap').style.display = 'block';
+                    if (grid) { grid.classList.remove('show'); }
+                }
+            } else {
+                document.getElementById('salesTableWrap').style.display = 'none';
+                if (grid) { grid.classList.remove('show'); grid.innerHTML = ''; }
+            }
             document.getElementById('profitProdukWrap').classList.toggle('show', sub === 'produk');
             document.getElementById('profitPayWrap').classList.toggle('show', sub === 'pay');
             document.getElementById('profitSalesWrap').classList.toggle('show', sub === 'sales');
             document.getElementById('profitBulanWrap').classList.toggle('show', sub === 'bulan');
             const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+            if (sub === 'transaksi') renderSalesTable(rows);
             if (sub === 'produk') renderProfitProduk(rows);
             if (sub === 'pay') renderProfitPay(rows);
             if (sub === 'sales') renderProfitSales(rows);
@@ -2898,6 +3103,10 @@
             queueCloudSync();
             salesFileNameEl.textContent = 'Belum ada file diupload';
             salesTableWrap.style.display = 'none';
+            const scg = document.getElementById('salesCardsGrid');
+            if (scg) { scg.classList.remove('show'); scg.innerHTML = ''; }
+            const svt = document.getElementById('salesViewToggle');
+            if (svt) svt.style.display = 'none';
             salesResultInfo.style.display = 'none';
             document.getElementById('salesCards').classList.remove('show');
             document.getElementById('salesSubtabs').classList.remove('show');
