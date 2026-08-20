@@ -526,7 +526,7 @@
                 <button class="btn btn-outline" onclick="resetCekSearch()">Reset</button>
             </div>
             <div id="cekBulanHint" style="display:none;margin:-6px 0 8px;color:var(--muted);font-size:0.75rem;">
-                📅 Centang bulan (bisa lebih dari satu). Langsung terfilter — klik di luar panel untuk menutup.
+                📅 Centang bulan (bisa lebih dari satu). Filter memuat faktur berdasarkan <b>bulan transaksi</b> atau <b>bulan jatuh tempo</b> (jadi transaksi Juli yang JT di Agustus ikut muncul saat pilih Agustus).
             </div>
 
             <div style="margin:-4px 0 10px;color:var(--muted);font-size:0.78rem;">
@@ -3362,7 +3362,18 @@
             }
             if (!bulanList.includes('all')) {
                 const setBulan = new Set(bulanList);
-                rows = rows.filter(r => setBulan.has(r.month));
+                if (isTempo) {
+                    // Tempo: cocokkan bulan transaksi ATAU bulan jatuh tempo
+                    // (transaksi Juli tgl 20+ sering jatuh tempo di Agustus)
+                    rows = rows.filter(r => {
+                        if (setBulan.has(r.month)) return true;
+                        const dueMonth = r.jatuhTempo ? monthNameFromDate(r.jatuhTempo) : null;
+                        if (dueMonth && setBulan.has(dueMonth)) return true;
+                        return false;
+                    });
+                } else {
+                    rows = rows.filter(r => setBulan.has(r.month));
+                }
             }
             if (stFilter !== 'all') {
                 rows = rows.filter(r => {
