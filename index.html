@@ -2885,6 +2885,13 @@
             document.getElementById('cekSubCash').classList.toggle('active', sub === 'cash');
             document.getElementById('cekSubTempo').classList.toggle('active', sub === 'tempo');
             populateCekStatusOptions(sub);
+            // Saat pindah ke Tempo, mulai dari Semua Bulan supaya data tidak "hilang" karena filter bulan
+            if (sub === 'tempo') {
+                const bl = document.getElementById('cekFilterBulan');
+                if (bl) bl.value = 'all';
+                cekBulanUserSet = true;
+            }
+            cekFakturCacheDirty = true;
             renderCekTable();
         }
 
@@ -2978,80 +2985,116 @@
                     out.push(g);
                 }
             } else {
-                // TEMPO – deteksi sangat longgar supaya data dari Penjualan ikut muncul
-                // 1. Semua faktur di Uang Masuk yang section-nya mengandung PIUTANG
-                // 2. Semua faktur di Data Penjualan yang pembayarannya BUKAN Cash murni
-                //    (kosong / Tempo / Kredit / Piutang / dll → dianggap Tempo)
+                // TEMPO – bangun langsung dari salesRows (lebih andal) + Piutang dari Uang Masuk
                 function isCashPay(p) {
                     const pay = String(p || '').trim().toUpperCase();
                     return pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
                 }
-                function isTempoPay(p) {
-                    const pay = String(p || '').trim().toUpperCase();
-                    if (!pay) return true; // kosong = anggap Tempo (lebih aman untuk cek piutang)
-                    if (isCashPay(pay)) return false;
-                    return true; // selain Cash → Tempo
-                }
-                const tempoKeys = new Set();
-                // dari Data Penjualan
-                for (const [fk, s] of salesMap.entries()) {
-                    if (isTempoPay(s.pembayaranSales)) tempoKeys.add(fk);
-                }
-                // dari Uang Masuk (bagian Piutang)
+                // Pre-index pembayaran Uang Masuk per faktur (sekali jalan, O(n))
+                const umByFaktur = new Map();
                 for (const r of allRows) {
+                    const fk = String(r.faktur || '').trim();
+                    if (!fk) continue;
+                    if (!umByFaktur.has(fk)) {
+                        umByFaktur.set(fk, {
+                            paidAmount: 0, tagihanUM: 0, hasLunas: false, hasTitip: false,
+                            isPiutang: false, isDropping: false,
+                            dateLabel: '', salesName: '', toko: '', alamat: ''
+                        });
+                    }
+                    const u = umByFaktur.get(fk);
+                    u.tagihanUM = Math.max(u.tagihanUM, Number(r.tagihan) || 0);
+                    u.paidAmount += (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                        (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
+                    if (r.status === 'LUNAS') u.hasLunas = true;
+                    if (r.status === 'TITIP') u.hasTitip = true;
                     const sec = String(r.section || '').toUpperCase();
-                    if (sec.includes('PIUTANG')) {
-                        const fk = String(r.faktur || '').trim();
-                        if (fk) tempoKeys.add(fk);
-                    }
+                    if (sec.includes('PIUTANG')) u.isPiutang = true;
+                    if (sec.includes('DROPPING')) u.isDropping = true;
+                    if (!u.dateLabel && r.date) u.dateLabel = r.date;
+                    if (!u.salesName && r.sales) u.salesName = r.sales;
+                    if (!u.toko && r.toko && r.toko !== '—') u.toko = r.toko;
+                    if (!u.alamat && r.alamat && r.alamat !== '—') u.alamat = r.alamat;
                 }
-                for (const fk of tempoKeys) {
-                    const s = salesMap.get(fk);
-                    // cek info dari Uang Masuk
-                    let paidAmount = 0,
-                        tagihanUM = 0,
-                        hasLunas = false,
-                        hasTitip = false,
-                        isPiutang = false,
-                        isDropping = false;
-                    let dateLabel = '',
-                        salesName = '',
-                        toko = '',
-                        alamat = '';
-                    for (const r of allRows) {
-                        if (String(r.faktur || '').trim() !== fk) continue;
-                        tagihanUM = Math.max(tagihanUM, Number(r.tagihan) || 0);
-                        paidAmount += (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
-                            (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
-                        if (r.status === 'LUNAS') hasLunas = true;
-                        if (r.status === 'TITIP') hasTitip = true;
-                        const sec = String(r.section || '').toUpperCase();
-                        if (sec.includes('PIUTANG')) isPiutang = true;
-                        if (sec.includes('DROPPING')) isDropping = true;
-                        if (!dateLabel && r.date) dateLabel = r.date;
-                        if (!salesName && r.sales) salesName = r.sales;
-                        if (!toko && r.toko) toko = r.toko;
-                        if (!alamat && r.alamat) alamat = r.alamat;
-                    }
-                    // Lewati hanya jika faktur ini murni Cash Dropping DAN di penjualan juga Cash
-                    const onlyDropping = isDropping && !isPiutang;
-                    const isSalesTempo = !s || isTempoPay(s.pembayaranSales);
-                    if (onlyDropping && !isSalesTempo) continue;
 
-                    const g = {
+                // Agregat dari Data Penjualan (bukan Cash)
+                const byFaktur = new Map();
+                for (const r of salesRows) {
+                    const fk = String(r.noFaktur || '').trim();
+                    if (!fk) continue;
+                    if (isCashPay(r.pembayaran)) continue; // skip Cash murni
+                    if (!byFaktur.has(fk)) {
+                        const td = parseSalesDate(r.tanggal);
+                        byFaktur.set(fk, {
+                            noFaktur: fk,
+                            tanggal: r.tanggal || '',
+                            tglDate: td,
+                            sales: r.sales || '',
+                            customer: r.customer || '',
+                            alamat: r.alamat || '',
+                            nominal: 0,
+                            items: 0,
+                            month: r.month || monthNameFromDate(td) || 'Lainnya',
+                            fromSales: true
+                        });
+                    }
+                    const g = byFaktur.get(fk);
+                    g.nominal += Number(r.total) || 0;
+                    g.items += 1;
+                    const td = parseSalesDate(r.tanggal);
+                    if (td && (!g.tglDate || td < g.tglDate)) {
+                        g.tglDate = td;
+                        g.tanggal = r.tanggal || g.tanggal;
+                        g.month = r.month || monthNameFromDate(td) || g.month;
+                    }
+                    if (!g.customer && r.customer) g.customer = r.customer;
+                    if (!g.sales && r.sales) g.sales = r.sales;
+                    if (!g.alamat && r.alamat) g.alamat = r.alamat;
+                }
+
+                // Tambah faktur yang hanya ada di Uang Masuk sebagai Piutang (belum di penjualan)
+                for (const [fk, u] of umByFaktur.entries()) {
+                    if (!u.isPiutang) continue;
+                    if (byFaktur.has(fk)) continue;
+                    const td = parseSalesDate(u.dateLabel);
+                    byFaktur.set(fk, {
                         noFaktur: fk,
-                        tanggal: s ? s.tanggal : dateLabel,
-                        tglDate: s ? s.tglDate : parseSalesDate(dateLabel),
-                        sales: (s && s.sales) || salesName || '',
-                        customer: (s && s.customer) || toko || '',
-                        alamat: (s && s.alamat) || alamat || '',
-                        nominal: (s && s.nominal) ? s.nominal : (tagihanUM || paidAmount || 0),
-                        items: s ? s.items : 0,
-                        paidAmount: paidAmount,
-                        tagihanUM: tagihanUM,
-                        paid: hasLunas || (tagihanUM > 0 && paidAmount >= tagihanUM - 1),
-                        pembayaran: isPiutang ? 'Piutang' : (s && isCashPay(s.pembayaranSales) ? 'Cash' : 'Tempo')
-                    };
+                        tanggal: u.dateLabel || '',
+                        tglDate: td,
+                        sales: u.salesName || '',
+                        customer: u.toko || '',
+                        alamat: u.alamat || '',
+                        nominal: u.tagihanUM || u.paidAmount || 0,
+                        items: 0,
+                        month: monthNameFromDate(td) || 'Lainnya',
+                        fromSales: false
+                    });
+                }
+
+                for (const g of byFaktur.values()) {
+                    const u = umByFaktur.get(g.noFaktur);
+                    const paidAmount = u ? u.paidAmount : 0;
+                    const tagihanUM = u ? u.tagihanUM : 0;
+                    const hasLunas = u ? u.hasLunas : false;
+                    const hasTitip = u ? u.hasTitip : false;
+                    const isPiutang = u ? u.isPiutang : false;
+
+                    if (u) {
+                        if (!g.sales && u.salesName) g.sales = u.salesName;
+                        if (!g.customer && u.toko) g.customer = u.toko;
+                        if (!g.alamat && u.alamat) g.alamat = u.alamat;
+                        if (!g.tanggal && u.dateLabel) {
+                            g.tanggal = u.dateLabel;
+                            g.tglDate = parseSalesDate(u.dateLabel);
+                        }
+                        if (!g.nominal) g.nominal = tagihanUM || paidAmount || 0;
+                    }
+
+                    g.paidAmount = paidAmount;
+                    g.tagihanUM = tagihanUM;
+                    g.paid = hasLunas || (tagihanUM > 0 && paidAmount >= tagihanUM - 1);
+                    g.pembayaran = isPiutang ? 'Piutang' : 'Tempo';
+
                     const due = g.tglDate ? addDays(g.tglDate, CEK_TEMPO_DAYS) : null;
                     g.jatuhTempo = due;
                     g.jatuhTempoStr = due ? fmtDateID(due) : '—';
@@ -3072,8 +3115,7 @@
                         g.umurOverdue = 0;
                         g.umurOverdueStr = '—';
                     }
-                    // prioritaskan month dari salesMap
-                    g.month = (s && s.month) ? s.month : monthNameFromDate(g.tglDate);
+                    if (!g.month) g.month = monthNameFromDate(g.tglDate) || 'Lainnya';
                     out.push(g);
                 }
             }
