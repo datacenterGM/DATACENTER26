@@ -776,8 +776,13 @@
         let fakturLastPayMap = {};
         let salesFakturMapDirty = true;
         let salesFakturMap = new Map(); // Map<faktur, agregat>
-        let cekFakturCacheDirty = true;
-        let cekFakturCache = { cash: [], tempo: [] };
+        let cekFakturCacheDirty = { cash: true, tempo: true };
+        let cekFakturCache = { cash: null, tempo: null };
+        // Cache rekonsiliasi uang masuk: fuzzy matching adalah bagian termahal.
+        // Jangan hitung ulang setiap klik/search jika data dan periode belum berubah.
+        let cekRekonCache = null;
+        let cekRekonCacheKey = '';
+        let cekRekonCacheDirty = true;
 
         // ---- Supabase config ----
         const SUPABASE_URL = 'https://tozrazbenakpjmgmjloe.supabase.co';
@@ -1692,12 +1697,16 @@
         // ---- Invalidate cache ----
         function invalidateFakturIndex() {
             fakturIndexDirty = true;
-            cekFakturCacheDirty = true;
+            cekFakturCacheDirty.cash = true;
+            cekFakturCacheDirty.tempo = true;
+            cekRekonCacheDirty = true;
         }
 
         function invalidateSalesIndex() {
             salesFakturMapDirty = true;
-            cekFakturCacheDirty = true;
+            cekFakturCacheDirty.cash = true;
+            cekFakturCacheDirty.tempo = true;
+            cekRekonCacheDirty = true;
         }
 
         // ---- Build LastPayMap ----
@@ -3351,7 +3360,8 @@
                 if (hint) hint.style.display = 'none';
                 closeCekBulanPanel();
             }
-            cekFakturCacheDirty = true;
+            // Ganti sub-tab mengubah filter bulan yang dipakai rekonsiliasi.
+            cekRekonCacheDirty = true;
             renderCekTable();
         }
 
@@ -3450,11 +3460,82 @@
             if (paid < nominal && paid >= nominal * 0.45) return 2;
             return 0;
         }
-        function findCekFuzzyPayment(g, umByFaktur, usedKeys) {
+        // Fuzzy matching TEMPO yang cepat.
+        // Versi lama membandingkan setiap faktur dengan SEMUA payment group (O(n*m)).
+        // Sekarang kandidat dibatasi dulu berdasarkan token Customer/Alamat/Sales.
+        function buildCekPaymentMatchIndex(umByFaktur) {
+            const index = { customer: new Map(), address: new Map(), sales: new Map() };
+            const add = (map, value, key) => {
+                const norm = normCekText(value);
+                if (!norm) return;
+                const tokens = norm.split(' ').filter(t => t.length >= 2);
+                // Simpan full text + token agar pencocokan "AA MART" vs "TOKO AA MART"
+                // tetap punya kandidat, tanpa scan seluruh payment group.
+                const keys = new Set([norm, ...tokens]);
+                for (const k of keys) {
+                    if (!map.has(k)) map.set(k, new Set());
+                    map.get(k).add(key);
+                }
+            };
+            for (const [fk, u] of umByFaktur.entries()) {
+                if (!u) continue;
+                add(index.customer, u.toko, fk);
+                add(index.address, u.alamat, fk);
+                add(index.sales, u.salesName, fk);
+            }
+            return index;
+        }
+
+        function cekIndexCandidates(index, field, value) {
+            const map = index && index[field];
+            if (!map) return new Set();
+            const norm = normCekText(value);
+            if (!norm) return new Set();
+            const out = new Set();
+            const tokens = norm.split(' ').filter(t => t.length >= 2);
+            // Full key dulu.
+            for (const k of [norm, ...tokens]) {
+                const set = map.get(k);
+                if (set) set.forEach(x => out.add(x));
+            }
+            // Untuk nilai pendek/partial, cek hanya key yang relevan, bukan semua payment.
+            if (out.size === 0 && norm.length >= 4) {
+                for (const [k, set] of map.entries()) {
+                    if (k.includes(norm) || norm.includes(k)) set.forEach(x => out.add(x));
+                }
+            }
+            return out;
+        }
+
+        function findCekFuzzyPayment(g, umByFaktur, usedKeys, matchIndex) {
             let best = null, bestScore = 0;
             const gDate = g.tglDate instanceof Date && !isNaN(g.tglDate) ? g.tglDate : null;
-            for (const [fk, u] of umByFaktur.entries()) {
-                if (usedKeys.has(fk) || !u) continue;
+
+            // Ambil kandidat dari identitas terlebih dahulu. Ini memangkas perbandingan
+            // dari seluruh payment group menjadi subset yang sangat kecil.
+            const candidateSet = new Set();
+            const byCustomer = cekIndexCandidates(matchIndex, 'customer', g.customer);
+            const byAddress = cekIndexCandidates(matchIndex, 'address', g.alamat);
+            const bySales = cekIndexCandidates(matchIndex, 'sales', g.sales);
+            const addIntersection = (a, b) => {
+                if (!a.size || !b.size) return;
+                const small = a.size <= b.size ? a : b;
+                const large = a.size <= b.size ? b : a;
+                for (const x of small) if (large.has(x)) candidateSet.add(x);
+            };
+            // Strong identity mensyaratkan minimal 2 dari 3 identitas cocok.
+            // Karena itu kandidat juga dicari melalui INTERSECTION, bukan union.
+            addIntersection(byCustomer, byAddress);
+            addIntersection(byCustomer, bySales);
+            addIntersection(byAddress, bySales);
+
+            // Tidak ada kandidat identitas ganda = jangan lakukan scan O(n) yang mahal.
+            if (!candidateSet.size) return null;
+
+            for (const fk of candidateSet) {
+                if (usedKeys.has(fk)) continue;
+                const u = umByFaktur.get(fk);
+                if (!u) continue;
                 const paymentAmount = Number(u.paidAmount) || 0;
                 const referenceAmount = Number(g.nominal) || Number(u.tagihanUM) || 0;
                 if (!paymentAmount && !u.hasLunas) continue;
@@ -3467,7 +3548,6 @@
                 if (sameAddress) identity += 4;
                 if (sameSales) identity += 2;
 
-                // Tanggal dipakai untuk membedakan beberapa faktur milik toko yang sama.
                 let dateScore = 0;
                 const uDate = parseSalesDate(u.dateLabel);
                 if (gDate && uDate) {
@@ -3479,7 +3559,6 @@
                 const amount = cekAmountScore(paymentAmount, referenceAmount);
                 if (!amount && !u.hasLunas) continue;
 
-                // Bonus kecil bila nomor faktur sangat mirip (kesalahan ketik).
                 const a = String(g.noFaktur || '').replace(/\D/g, '');
                 const b = String(fk || '').replace(/\D/g, '');
                 let fakturScore = 0;
@@ -3490,8 +3569,6 @@
                 }
 
                 const score = identity + dateScore + amount + fakturScore;
-                // Wajib ada minimal dua identitas yang cocok. Nominal/tanggal menjadi penguat,
-                // bukan pengganti identitas customer/alamat/sales.
                 const strongIdentity = (sameCustomer && sameAddress) ||
                     (sameCustomer && sameSales) || (sameAddress && sameSales);
                 if (!strongIdentity || score < 7) continue;
@@ -3508,6 +3585,7 @@
             }
             return best;
         }
+
         function toggleCekDownloadMenu(e) {
             if (e) e.stopPropagation();
             const m = document.getElementById('cekDownloadMenu'); if (!m) return;
@@ -3569,8 +3647,9 @@
 
         function buildCekFakturList(payType) {
             // Gunakan cache jika masih valid
-            if (!cekFakturCacheDirty && cekFakturCache[payType.toLowerCase()]) {
-                return cekFakturCache[payType.toLowerCase()];
+            const cacheKey = payType.toLowerCase();
+            if (!cekFakturCacheDirty[cacheKey] && Array.isArray(cekFakturCache[cacheKey])) {
+                return cekFakturCache[cacheKey];
             }
             const salesMap = rebuildSalesFakturMap();
             const today = new Date();
@@ -3668,6 +3747,10 @@
                     if (!u.alamat && r.alamat && r.alamat !== '—') u.alamat = r.alamat;
                 }
 
+                // Index identitas pembayaran dibuat SEKALI. Ini adalah kunci percepatan Tempo:
+                // fuzzy matching tidak lagi membandingkan setiap faktur dengan semua payment group.
+                const cekPaymentMatchIndex = buildCekPaymentMatchIndex(umByFaktur);
+
                 // Agregat dari Data Penjualan (bukan Cash)
                 const byFaktur = new Map();
                 for (const r of salesRows) {
@@ -3727,7 +3810,7 @@
                 for (const g of byFaktur.values()) {
                     const exact = umByFaktur.get(g.noFaktur);
                     if (exact) { resolvedUM.set(g.noFaktur, exact); fuzzyUsed.add(g.noFaktur); continue; }
-                    const hit = findCekFuzzyPayment(g, umByFaktur, fuzzyUsed);
+                    const hit = findCekFuzzyPayment(g, umByFaktur, fuzzyUsed, cekPaymentMatchIndex);
                     if (hit) {
                         resolvedUM.set(g.noFaktur, hit.data); fuzzyUsed.add(hit.key);
                         g.paymentMatch = 'FUZZY'; g.paymentMatchFaktur = hit.key; g.paymentMatchScore = hit.score; g.paymentMatchInfo = hit.match || {};
@@ -3794,8 +3877,8 @@
                 return tb - ta;
             });
             // Simpan ke cache
-            cekFakturCache[payType.toLowerCase()] = out;
-            cekFakturCacheDirty = false;
+            cekFakturCache[cacheKey] = out;
+            cekFakturCacheDirty[cacheKey] = false;
             return out;
         }
 
@@ -3906,6 +3989,10 @@
         // section Cash Dropping / Piutang hanya menjadi petunjuk, bukan pengganti faktur.
         function buildCekUangMasukReconciliation(selectedMonths) {
             const selected = Array.isArray(selectedMonths) ? selectedMonths.filter(m => m && m !== 'all') : [];
+            const key = (selected.length ? selected.slice().sort().join('|') : 'ALL') +
+                '|A' + (allRows ? allRows.length : 0) + '|S' + (salesRows ? salesRows.length : 0);
+            if (!cekRekonCacheDirty && cekRekonCache && cekRekonCacheKey === key) return cekRekonCache;
+
             const useAll = !selected.length;
             const inPeriod = r => useAll || selected.includes(r.month);
             const salesMap = rebuildSalesFakturMap();
@@ -3975,14 +4062,39 @@
             const exactKeys = new Set(resolved.map(x => x.pg));
             const fuzzyPayments = payments.filter(pg => !exactKeys.has(pg));
             const fuzzyCandidates = [...salesMap.values()];
+            // Blocking index: cari kandidat yang berbagi minimal satu identitas exact.
+            // Ini menghindari loop payment x seluruh faktur (yang paling membuat tab lambat).
+            const idxCustomer = new Map(), idxAddress = new Map(), idxSales = new Map();
+            const addIdx = (map, value, sp) => {
+                const k = normCekText(value); if (!k) return;
+                if (!map.has(k)) map.set(k, []); map.get(k).push(sp);
+            };
+            for (const sp of fuzzyCandidates) {
+                addIdx(idxCustomer, sp.customer, sp);
+                addIdx(idxAddress, sp.alamat, sp);
+                addIdx(idxSales, sp.sales, sp);
+            }
 
             // Fuzzy match: identitas harus kuat (minimal dua dari Customer/Alamat/Sales),
             // lalu nominal/tanggal/kemiripan faktur menjadi penguat. Satu pembayaran hanya
             // dapat dipakai sekali, tetapi satu faktur boleh menerima beberapa pembayaran cicilan.
             for (const pg of fuzzyPayments) {
                 const u = pg.rows[0] || {};
+                let candidateSet = new Set();
+                const addCandidates = (map, value) => {
+                    const k = normCekText(value);
+                    if (!k) return;
+                    const arr = map.get(k) || [];
+                    arr.forEach(sp => candidateSet.add(sp));
+                };
+                addCandidates(idxCustomer, u.toko);
+                addCandidates(idxAddress, u.alamat);
+                addCandidates(idxSales, u.sales);
+                // Jika exact blocking gagal (mis. typo), gunakan subset berbasis token awal.
+                // Hanya fallback ke seluruh kandidat bila datanya kecil agar dataset besar tetap responsif.
+                const candidates = candidateSet.size ? [...candidateSet] : (fuzzyCandidates.length <= 1500 ? fuzzyCandidates : []);
                 let best = null;
-                for (const sp of fuzzyCandidates) {
+                for (const sp of candidates) {
                     const sameCustomer = textSim(sp.customer, u.toko);
                     const sameAddress = textSim(sp.alamat, u.alamat);
                     const sameSales = textSim(sp.sales, u.sales);
@@ -4027,7 +4139,10 @@
                 details.push({ rows:pg.rows, amount:pg.amount, fakturUangMasuk:pg.fk, ...(res || {matchedFaktur:'',category:'',matchType:'UNIDENTIFIED'}) });
             }
             const checkTotal = cash + tempo + unidentified;
-            return { total, cash, tempo, unidentified, details, balanced: Math.abs(checkTotal-total) < 0.5, checkTotal };
+            cekRekonCache = { total, cash, tempo, unidentified, details, balanced: Math.abs(checkTotal-total) < 0.5, checkTotal };
+            cekRekonCacheKey = key;
+            cekRekonCacheDirty = false;
+            return cekRekonCache;
         }
 
         function updateCekReconciliationCards(selectedMonths) {
@@ -4957,9 +5072,7 @@
                 document.getElementById('tabBtnCek').classList.remove('active');
             }
             if (tab === 'cek') {
-                // pastikan indeks selalu segar saat buka tab Cek
-                cekFakturCacheDirty = true;
-                salesFakturMapDirty = true;
+                // Jangan paksa rebuild saat setiap klik tab. Cache diinvalidasi hanya ketika data berubah.
                 renderCekTable();
             }
         }
