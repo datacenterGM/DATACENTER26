@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DATACENTER — Laporan Harian + Rapikan Data</title>
+    <title>DATACENTER-antiAmbigu</title>
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.json" />
@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="DATACENTER" />
+    <meta name="apple-mobile-web-app-title" content="DATACENTER-antiAmbigu" />
     <link rel="icon" href="icon-192.png" type="image/png" />
     <link rel="apple-touch-icon" href="icon-192.png" />
 
@@ -853,6 +853,20 @@
         function monthNameFromDate(d) {
             if (!d || isNaN(d)) return 'Lainnya';
             return MONTH_ORDER[d.getMonth()] || 'Lainnya';
+        }
+
+        // Bulan awal aplikasi selalu mengikuti bulan kalender saat ini.
+        // Jika bulan tersebut belum ada di data, gunakan bulan data terbaru sebagai fallback.
+        function currentMonthName() {
+            return MONTH_ORDER[new Date().getMonth()] || 'Lainnya';
+        }
+
+        function preferredMonth(months) {
+            const list = Array.isArray(months) ? months.filter(Boolean) : [];
+            const now = currentMonthName();
+            if (list.includes(now)) return now;
+            const ordered = [...new Set(list)].sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
+            return ordered.length ? ordered[ordered.length - 1] : null;
         }
 
         function detectMonth(sheetName, dateLabel) {
@@ -1711,10 +1725,11 @@
             months.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
             const sel = document.getElementById('filterMonth');
             const last = latestMonth();
+            const initialMonth = preferredMonth(months);
             sel.innerHTML = '<option value="all">Semua Bulan</option>' +
-                months.map(m => '<option value="' + m + '"' + (m === last ? ' selected' : '') + '>' + m + (m === last ?
-                    ' (terbaru)' : '') + '</option>').join('');
-            const scope = last ? allRows.filter(r => r.month === last) : allRows;
+                months.map(m => '<option value="' + m + '"' + (m === initialMonth ? ' selected' : '') + '>' + m + (m === initialMonth ?
+                    ' (bulan aktif)' : '') + '</option>').join('');
+            const scope = initialMonth ? allRows.filter(r => r.month === initialMonth) : allRows;
             updateCards(scope);
             buildDailySummary(scope);
             renderTable(scope);
@@ -1854,7 +1869,8 @@
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
-            const last = latestMonth();
+            const months = [...new Set(allRows.map(r => r.month).filter(Boolean))];
+            const last = preferredMonth(months);
             document.getElementById('filterMonth').value = last || 'all';
             document.getElementById('filterSection').value = 'all';
             document.getElementById('filterStatus').value = 'all';
@@ -2674,12 +2690,13 @@
                 curSales = salesSel.value;
             const months = [...new Set(salesRows.map(r => r.month).filter(Boolean))];
             months.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
-            const lastSalesMonth = months.length ? months[months.length - 1] : null;
+            const lastSalesMonth = preferredMonth(months);
+            const isInitial = !months.includes(curMonth) || curMonth === 'all';
+            const activeSalesMonth = isInitial ? lastSalesMonth : curMonth;
             monthSel.innerHTML = '<option value="all">Semua Bulan</option>' +
-                months.map(m => '<option value="' + esc(m) + '">' + esc(m) + (m === lastSalesMonth ? ' (terbaru)' : '') +
+                months.map(m => '<option value="' + esc(m) + '"' + (m === activeSalesMonth ? ' selected' : '') + '>' + esc(m) + (m === activeSalesMonth ? ' (bulan aktif)' : '') +
                     '</option>').join('');
-            if (months.includes(curMonth)) monthSel.value = curMonth;
-            else if (lastSalesMonth) monthSel.value = lastSalesMonth;
+            if (activeSalesMonth) monthSel.value = activeSalesMonth;
             const pays = [...new Set(salesRows.map(r => r.pembayaran).filter(v => v && v !== '—'))].sort();
             paySel.innerHTML = '<option value="all">Semua Pembayaran</option>' +
                 pays.map(p => '<option value="' + esc(p) + '">' + esc(p) + '</option>').join('');
@@ -2713,7 +2730,9 @@
 
         function resetSalesSearch() {
             document.getElementById('salesSearchInput').value = '';
-            document.getElementById('filterSalesMonth').value = 'all';
+            const months = [...new Set(salesRows.map(r => r.month).filter(Boolean))];
+            const activeMonth = preferredMonth(months);
+            document.getElementById('filterSalesMonth').value = activeMonth || 'all';
             document.getElementById('filterSalesPembayaran').value = 'all';
             document.getElementById('filterSalesSales').value = 'all';
             lastSalesFiltered = salesRows;
@@ -3268,11 +3287,17 @@
                 if (bl) bl.style.display = 'none';
                 if (multiWrap) multiWrap.style.display = '';
                 if (hint) hint.style.display = 'block';
-                cekSelectedBulanMulti = ['all'];
-                cekBulanUserSet = true;
+                const tempoMonths = [...new Set((salesRows || []).map(r => r.month).filter(Boolean))];
+                const activeTempoMonth = preferredMonth(tempoMonths);
+                cekSelectedBulanMulti = activeTempoMonth ? [activeTempoMonth] : ['all'];
+                cekBulanUserSet = false;
                 updateCekBulanMultiLabel();
             } else {
-                if (bl) { bl.style.display = ''; bl.value = 'all'; }
+                if (bl) {
+                    bl.style.display = '';
+                    const cashMonths = [...new Set((allRows || []).map(r => r.month).filter(Boolean))];
+                    bl.value = preferredMonth(cashMonths) || 'all';
+                }
                 if (multiWrap) multiWrap.style.display = 'none';
                 if (hint) hint.style.display = 'none';
                 closeCekBulanPanel();
@@ -3725,6 +3750,13 @@
             return out;
         }
 
+        // Normalisasi TAMPILAN tanggal Cek Data tanpa mengubah nilai sumber.
+        // Semua format yang berhasil diparse ditampilkan seragam dd/mm/yyyy.
+        function fmtCekTanggalTampilan(raw, parsed) {
+            const d = parsed instanceof Date && !isNaN(parsed.getTime()) ? parsed : parseSalesDate(raw);
+            return d ? fmtDateID(d) : (raw || '—');
+        }
+
         // ---- Render Cek Table (dengan virtual) ----
         const cekVirtual = createVirtualTable(
             document.getElementById('cekTableWrap'),
@@ -3733,7 +3765,7 @@
                 const isTempo = cekSub === 'tempo';
                 if (isTempo) {
                     return '<tr>' +
-                        '<td>' + esc(r.tanggal || '—') + '</td>' +
+                        '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
                         '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span></td>' +
                         '<td class="toko">' + esc(r.customer) + '</td>' +
                         '<td>' + esc(r.sales) + '</td>' +
@@ -3748,7 +3780,7 @@
                         '</tr>';
                 }
                 return '<tr>' +
-                    '<td>' + esc(r.tanggal || '—') + '</td>' +
+                    '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
                     '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
                     '<td class="toko">' + esc(r.customer) + '</td>' +
                     '<td>' + esc(r.sales) + '</td>' +
@@ -3791,6 +3823,9 @@
                 // Hanya rebuild checklist jika daftar bulan berubah (hindari panel "macet" saat centang)
                 if (list && monthsKey !== _cekBulanMonthsKey) {
                     _cekBulanMonthsKey = monthsKey;
+                    const activeCekMonth = preferredMonth(months);
+                    const isInitialCek = !cekBulanUserSet;
+                    if (isInitialCek && activeCekMonth) cekSelectedBulanMulti = [activeCekMonth];
                     const isAll = !cekSelectedBulanMulti.length || cekSelectedBulanMulti.includes('all');
                     list.innerHTML = months.map(m => {
                         const checked = !isAll && cekSelectedBulanMulti.includes(m) ? ' checked' : '';
@@ -3806,11 +3841,12 @@
                 const sel = document.getElementById('cekFilterBulan');
                 if (!sel) return;
                 const cur = sel.value;
+                const activeCekMonth = preferredMonth(months);
                 sel.innerHTML = '<option value="all">Semua Bulan</option>' +
-                    months.map(m => '<option value="' + esc(m) + '">' + esc(m) +
-                        (m === lastMonth ? ' (terbaru)' : '') + '</option>').join('');
-                if (months.includes(cur)) sel.value = cur;
-                else if (!cekBulanUserSet && lastMonth) sel.value = lastMonth;
+                    months.map(m => '<option value="' + esc(m) + '"' + (m === activeCekMonth ? ' selected' : '') + '>' + esc(m) +
+                        (m === activeCekMonth ? ' (bulan aktif)' : '') + '</option>').join('');
+                if (cekBulanUserSet && months.includes(cur)) sel.value = cur;
+                else if (activeCekMonth) sel.value = activeCekMonth;
                 else sel.value = 'all';
             }
         }
@@ -3947,15 +3983,18 @@
             document.getElementById('cekSearchInput').value = '';
             document.getElementById('cekFilterStatus').value = 'all';
             const bl = document.getElementById('cekFilterBulan');
-            if (bl) bl.value = 'all';
-            cekSelectedBulanMulti = ['all'];
+            const cekMonths = [...new Set((cekSub === 'tempo' ? (salesRows || []) : (allRows || [])).map(r => r.month).filter(Boolean))];
+            const activeCekMonth = preferredMonth(cekMonths);
+            if (bl) bl.value = activeCekMonth || 'all';
+            cekSelectedBulanMulti = activeCekMonth ? [activeCekMonth] : ['all'];
             const allCb = document.getElementById('cekBulanAll');
             if (allCb) allCb.checked = true;
             const list = document.getElementById('cekBulanCheckList');
-            if (list) list.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = false; });
+            if (list) list.querySelectorAll('input[type="checkbox"]').forEach(c => { c.checked = c.value === activeCekMonth; });
+            if (allCb) allCb.checked = !activeCekMonth;
             updateCekBulanMultiLabel();
             closeCekBulanPanel();
-            cekBulanUserSet = true;
+            cekBulanUserSet = false;
             renderCekTable();
         }
 
@@ -4223,11 +4262,13 @@
                 });
                 const dates = Array.from(dateSet).sort();
                 const months = Array.from(monthSet).sort();
-                const lastMonthKey = months.length ? months[months.length - 1] : null;
+                const currentKey = new Date();
+                const currentMonthKey = currentKey.getFullYear() + '-' + String(currentKey.getMonth() + 1).padStart(2, '0');
+                const lastMonthKey = months.includes(currentMonthKey) ? currentMonthKey : (months.length ? months[months.length - 1] : null);
                 filterTanggal.innerHTML = '<option value="">Semua tanggal</option>' +
                     dates.map(k => `<option value="${k}">${fmtDateShort(new Date(k + 'T00:00:00'))}</option>`).join('');
                 filterBulan.innerHTML = '<option value="">Semua bulan</option>' +
-                    months.map(k => `<option value="${k}">${fmtMonthLabel(k)}${k === lastMonthKey ? ' (terbaru)' : ''}</option>`)
+                    months.map(k => `<option value="${k}">${fmtMonthLabel(k)}${k === lastMonthKey ? ' (bulan aktif)' : ''}</option>`)
                     .join('');
                 if (lastMonthKey) filterBulan.value = lastMonthKey;
             }
@@ -4844,7 +4885,7 @@
                 setAutoBackupJsonStatus('Aktif — backup JSON otomatis tiap 30 menit, jam 14.30–16.30 WIB.');
             }
 
-            console.log('DATACENTER siap dengan optimasi data besar.');
+            console.log('DATACENTER-antiAmbigu siap dengan optimasi data besar.');
         })();
 
         // ---- Event listeners for search ----
