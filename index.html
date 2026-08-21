@@ -105,6 +105,11 @@
         .mini .v { font-size: 0.9rem; font-weight: 700; }
 
         .sales-cards { display: none; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-bottom: 10px; }
+        /* Cek Data: 10 kartu dibuat pas satu baris pada desktop */
+        #cekCards.show { grid-template-columns: repeat(10, minmax(0, 1fr)) !important; gap: 5px; }
+        #cekCards.show .scard { padding: 5px 7px; min-width: 0; }
+        #cekCards.show .sc-label { font-size: 0.50rem; letter-spacing: 0; }
+        #cekCards.show .sc-value { font-size: 0.76rem; }
         .sales-cards.show { display: grid; }
         #fakturCards.show { grid-template-columns: repeat(3, 1fr); }
         #salesCards.show { grid-template-columns: repeat(5, 1fr); }
@@ -386,6 +391,7 @@
         /* Responsive – disingkat */
         @media (max-width:768px) { .container { padding: 12px; } .tabs { gap: 6px; } .tab-btn { font-size: 0.78rem; padding: 8px 12px; } .search-bar input { min-width: 140px; } .sales-cards { gap: 10px; } .scard .sc-value { font-size: 1rem; } table { font-size: 0.75rem; } }
         @media (max-width:560px) { .container { padding: 10px; } .brand .sub { display: none; } .tab-btn { flex: 1; font-size: 0.75rem; } .search-bar { flex-direction: column; } #salesCards.show { grid-template-columns: repeat(2,1fr) !important; } #fakturCards.show { grid-template-columns: 1fr !important; } .menu-dd { right: -10px; min-width: 200px; } table { font-size: 0.7rem; } .modal { width: calc(100% - 20px); } }
+        @media (max-width:768px) { #cekCards.show { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } #cekCards.show .sc-label { font-size: 0.56rem; } #cekCards.show .sc-value { font-size: 0.82rem; } }
         @media (max-width:420px) { .container { padding: 8px; } .brand h1 { font-size: 0.85rem; } .tab-btn { font-size: 0.7rem; } #salesCards.show { grid-template-columns: 1fr !important; } .scard .sc-value { font-size: 0.9rem; } .modal { margin: 5px; } }
     </style>
 </head>
@@ -572,14 +578,17 @@
                 </div>
             </div>
 
-            <div class="sales-cards show" id="cekCards" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-bottom:10px;">
+            <div class="sales-cards show" id="cekCards" style="display:grid; margin-bottom:10px;">
                 <div class="scard"><div class="sc-label" id="cekCard1Label">Jml Faktur</div><div class="sc-value" id="cekCard1">0</div></div>
                 <div class="scard"><div class="sc-label" id="cekCard2Label">Nominal</div><div class="sc-value" id="cekCard2">0</div></div>
                 <div class="scard"><div class="sc-label" id="cekCard3Label">—</div><div class="sc-value" id="cekCard3">0</div></div>
                 <div class="scard"><div class="sc-label" id="cekCard4Label">—</div><div class="sc-value" id="cekCard4">0</div></div>
                 <div class="scard"><div class="sc-label">Nominal Lunas</div><div class="sc-value" id="cekCardLunas">0</div></div>
                 <div class="scard"><div class="sc-label">Diterima dr Titip</div><div class="sc-value" id="cekCardTitip">0</div></div>
-                <div class="scard" id="cekCardCrossWrap"><div class="sc-label">Lunas + Titip (crosscheck)</div><div class="sc-value" id="cekCardCross">0</div></div>
+                <div class="scard"><div class="sc-label">🟢 Teridentifikasi CASH</div><div class="sc-value" id="cekCardUMCash">0</div></div>
+                <div class="scard"><div class="sc-label">🔵 Teridentifikasi TEMPO</div><div class="sc-value" id="cekCardUMTempo">0</div></div>
+                <div class="scard" id="cekCardCrossWrap"><div class="sc-label">💰 TOTAL UANG MASUK</div><div class="sc-value" id="cekCardUMTotal">0</div></div>
+                <div class="scard"><div class="sc-label">🟡 BELUM TERIDENTIFIKASI</div><div class="sc-value" id="cekCardUMUnidentified">0</div></div>
             </div>
 
             <div class="search-bar show" id="cekSearchBar" style="display:flex;">
@@ -609,8 +618,9 @@
             </div>
 
             <div style="margin:-4px 0 10px;color:var(--muted);font-size:0.78rem;">
-                💡 <b>Nominal Lunas</b> + <b>Diterima dr Titip</b> = kolom <b>Lunas + Titip (crosscheck)</b>.
-                Bandingkan angka ini dengan <b>TOTAL Uang Masuk</b> di tab 💰 Uang Masuk untuk bulan yang sama — kalau beda, berarti ada faktur yang belum tercatat / salah status.
+                💡 <b>Crosscheck sekarang berdasarkan UANG YANG BENAR-BENAR MASUK</b>, bukan nominal faktur.
+                Pembayaran dicocokkan ke faktur Cash/Tempo; No.Faktur salah ketik dicari dengan Customer + Alamat + Sales + Nominal + tanggal.
+                <span id="cekRekonHint" style="display:block;margin-top:4px;font-weight:700;"></span>
             </div>
             <div class="result-info" id="cekResultInfo" style="display:block;margin-bottom:8px;color:var(--muted);font-size:0.85rem;"></div>
 
@@ -3851,6 +3861,156 @@
             }
         }
 
+        // ---- Rekonsiliasi Uang Masuk yang benar-benar diterima ----
+        // Periode mengikuti TANGGAL UANG MASUK (r.month), bukan bulan transaksi/jatuh tempo faktur.
+        // Setiap baris pembayaran dihitung sekali. Identifikasi harus mengarah ke faktur penjualan;
+        // section Cash Dropping / Piutang hanya menjadi petunjuk, bukan pengganti faktur.
+        function buildCekUangMasukReconciliation(selectedMonths) {
+            const selected = Array.isArray(selectedMonths) ? selectedMonths.filter(m => m && m !== 'all') : [];
+            const useAll = !selected.length;
+            const inPeriod = r => useAll || selected.includes(r.month);
+            const salesMap = rebuildSalesFakturMap();
+
+            // Rekonsiliasi dimulai dari UANG MASUK. Setiap kelompok pembayaran (berdasarkan
+            // No.Faktur yang tertulis di Uang Masuk) dihitung sekali, lalu dicari faktur penjualan
+            // yang paling masuk akal. Pembayaran boleh dicicil ke faktur yang sama; yang tidak boleh
+            // adalah satu kelompok pembayaran yang sama dipakai untuk dua faktur.
+            const paymentGroups = new Map();
+            for (const r of (allRows || [])) {
+                if (!r || !inPeriod(r)) continue;
+                const amount = (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                    (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
+                if (!amount) continue;
+                const fk = String(r.faktur || '').trim();
+                // Baris tanpa nomor faktur tetap dihitung sebagai uang masuk, tetapi tidak bisa
+                // dipakai untuk exact-match; nanti masuk ke kandidat fuzzy/unidentified.
+                const key = fk || '__BLANK__' + paymentGroups.size;
+                if (!paymentGroups.has(key)) paymentGroups.set(key, { fk, rows: [], amount: 0 });
+                const g = paymentGroups.get(key);
+                g.rows.push(r);
+                g.amount += amount;
+            }
+
+            const payments = [...paymentGroups.values()];
+            let total = payments.reduce((s,p) => s + p.amount, 0);
+            let cash = 0, tempo = 0, unidentified = 0;
+            const details = [];
+            const matchedBySales = new Map();
+
+            const categoryOfSales = (sp) => {
+                sp = String(sp || '').toUpperCase().trim();
+                return (sp === 'CASH' || sp.startsWith('CASH') || sp === 'TUNAI') ? 'CASH' : 'TEMPO';
+            };
+            const normNum = v => String(v || '').replace(/\D/g,'');
+            const amountScore = (paid, nominal) => {
+                paid = Number(paid)||0; nominal = Number(nominal)||0;
+                if (!paid || !nominal) return 0;
+                const diff = Math.abs(paid-nominal);
+                if (diff <= 1) return 7;
+                if (paid < nominal && paid >= nominal*0.45) return 5;
+                if (diff <= Math.max(1000, nominal*0.03)) return 4;
+                return 0;
+            };
+            const invoiceSimilarity = (a,b) => {
+                a=normNum(a); b=normNum(b);
+                if (!a || !b || a.length!==b.length) return 0;
+                let same=0; for(let i=0;i<a.length;i++) if(a[i]===b[i]) same++;
+                if (same===a.length) return 8;
+                if (same>=Math.max(4,a.length-1)) return 3;
+                if (same>=Math.max(4,a.length-2)) return 1;
+                return 0;
+            };
+            const textSim = (a,b) => cekTextSimilar(a,b);
+
+            // Exact match berdasarkan No.Faktur ditetapkan lebih dulu. Ini paling kuat dan
+            // tidak tergantung pada nama/alamat yang mungkin ditulis dengan variasi.
+            const resolved = [];
+            for (const pg of payments) {
+                if (!pg.fk || !salesMap.has(pg.fk)) continue;
+                const sp = salesMap.get(pg.fk);
+                const cat = categoryOfSales(sp.pembayaranSales);
+                resolved.push({ pg, matchedFaktur:pg.fk, category:cat, matchType:'EXACT', score:100 });
+                matchedBySales.set(pg.fk, (matchedBySales.get(pg.fk)||0) + pg.amount);
+            }
+
+            const exactKeys = new Set(resolved.map(x => x.pg));
+            const fuzzyPayments = payments.filter(pg => !exactKeys.has(pg));
+            const fuzzyCandidates = [...salesMap.values()];
+
+            // Fuzzy match: identitas harus kuat (minimal dua dari Customer/Alamat/Sales),
+            // lalu nominal/tanggal/kemiripan faktur menjadi penguat. Satu pembayaran hanya
+            // dapat dipakai sekali, tetapi satu faktur boleh menerima beberapa pembayaran cicilan.
+            for (const pg of fuzzyPayments) {
+                const u = pg.rows[0] || {};
+                let best = null;
+                for (const sp of fuzzyCandidates) {
+                    const sameCustomer = textSim(sp.customer, u.toko);
+                    const sameAddress = textSim(sp.alamat, u.alamat);
+                    const sameSales = textSim(sp.sales, u.sales);
+                    const identityCount = [sameCustomer,sameAddress,sameSales].filter(Boolean).length;
+                    if (identityCount < 2) continue;
+
+                    let score = 0;
+                    if (sameCustomer) score += 5;
+                    if (sameAddress) score += 5;
+                    if (sameSales) score += 3;
+                    score += amountScore(pg.amount, sp.nominal);
+                    score += invoiceSimilarity(sp.noFaktur, pg.fk);
+
+                    const pDate = parseSalesDate(u.date || u.tanggal || '');
+                    if (pDate && sp.tglDate) {
+                        const diff = Math.abs(Math.round((pDate-sp.tglDate)/86400000));
+                        if (diff <= 31) score += 3;
+                        else if (diff <= 90) score += 1;
+                    }
+
+                    const already = matchedBySales.get(sp.noFaktur) || 0;
+                    const remaining = Math.max(0, Number(sp.nominal)||0 - already);
+                    // Pembayaran parsial boleh masuk. Jika jauh melebihi sisa faktur, jangan paksa.
+                    if (sp.nominal > 0 && pg.amount > remaining + Math.max(1000, sp.nominal*0.03)) continue;
+                    if (score < 11) continue;
+                    if (!best || score > best.score) {
+                        best = { matchedFaktur:sp.noFaktur, category:categoryOfSales(sp.pembayaranSales), matchType:'FUZZY', score, match:{customer:sameCustomer,address:sameAddress,sales:sameSales} };
+                    }
+                }
+                if (best) {
+                    resolved.push({ pg, ...best });
+                    matchedBySales.set(best.matchedFaktur, (matchedBySales.get(best.matchedFaktur)||0) + pg.amount);
+                }
+            }
+
+            const resolutionByPayment = new Map(resolved.map(x => [x.pg, x]));
+            for (const pg of payments) {
+                const res = resolutionByPayment.get(pg);
+                if (res && res.category === 'CASH') cash += pg.amount;
+                else if (res && res.category === 'TEMPO') tempo += pg.amount;
+                else unidentified += pg.amount;
+                details.push({ rows:pg.rows, amount:pg.amount, fakturUangMasuk:pg.fk, ...(res || {matchedFaktur:'',category:'',matchType:'UNIDENTIFIED'}) });
+            }
+            const checkTotal = cash + tempo + unidentified;
+            return { total, cash, tempo, unidentified, details, balanced: Math.abs(checkTotal-total) < 0.5, checkTotal };
+        }
+
+        function updateCekReconciliationCards(selectedMonths) {
+            const rec = buildCekUangMasukReconciliation(selectedMonths);
+            const set = (id, value) => { const el=document.getElementById(id); if(el) el.textContent=Number(value||0).toLocaleString('id-ID'); };
+            set('cekCardUMCash', rec.cash);
+            set('cekCardUMTempo', rec.tempo);
+            set('cekCardUMTotal', rec.total);
+            set('cekCardUMUnidentified', rec.unidentified);
+            const hint = document.getElementById('cekRekonHint');
+            if (hint) {
+                const selTxt = rec.total.toLocaleString('id-ID');
+                const sumTxt = rec.checkTotal.toLocaleString('id-ID');
+                const statusTxt = rec.balanced ? '✅ Seimbang' : '🔴 ADA SELISIH';
+                hint.innerHTML = statusTxt + ' · CASH <b>' + rec.cash.toLocaleString('id-ID') +
+                    '</b> + TEMPO <b>' + rec.tempo.toLocaleString('id-ID') +
+                    '</b> + BELUM TERIDENTIFIKASI <b>' + rec.unidentified.toLocaleString('id-ID') +
+                    '</b> = <b>' + sumTxt + '</b> · Total Uang Masuk <b>' + selTxt + '</b>';
+            }
+            return rec;
+        }
+
         function renderCekTable() {
             const isTempo = cekSub === 'tempo';
             const payType = isTempo ? 'TEMPO' : 'CASH';
@@ -3899,7 +4059,8 @@
             const nomTitip = rows.filter(r => r.statusCek === 'Titip').reduce((s, r) => s + (r.paidAmount || 0), 0);
             document.getElementById('cekCardLunas').textContent = nomLunas.toLocaleString('id-ID');
             document.getElementById('cekCardTitip').textContent = nomTitip.toLocaleString('id-ID');
-            document.getElementById('cekCardCross').textContent = (nomLunas + nomTitip).toLocaleString('id-ID');
+            // Crosscheck bukan lagi Nominal Lunas + Titip. Hitung uang masuk berdasarkan tanggal uang masuk.
+            updateCekReconciliationCards(bulanList);
 
             if (isTempo) {
                 const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
