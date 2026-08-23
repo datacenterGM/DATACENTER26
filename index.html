@@ -3294,7 +3294,8 @@
             } else if (sub === 'anomali') {
                 sel.innerHTML = '<option value="all">Semua Tipe</option>' +
                     '<option value="anomali_cash">💵 Cash</option>' +
-                    '<option value="anomali_tempo">📅 Tempo</option>';
+                    '<option value="anomali_tempo">📅 Tempo (semua)</option>' +
+                    '<option value="anomali_tempo_overdue">🚨 Tempo · Sudah Jatuh Tempo</option>';
             } else {
                 sel.innerHTML = '<option value="all">Semua Status</option>' +
                     '<option value="lunas">Lunas</option>' +
@@ -3563,9 +3564,32 @@
                     if (umFakturSet.has(g.noFaktur)) continue;
                     g.statusCek = 'Anomali';
                     g.pembayaran = g.tipeBayar;
+                    // Jatuh tempo hanya relevan untuk anomali bertipe Tempo (Cash tidak
+                    // punya konsep jatuh tempo). paidAmount selalu 0 di sini karena
+                    // memang tidak ada uang masuk sama sekali untuk faktur ini.
+                    g.paidAmount = 0;
+                    if (g.tipeBayar === 'Tempo') {
+                        const due = g.tglDate ? addDays(g.tglDate, CEK_TEMPO_DAYS) : null;
+                        g.jatuhTempo = due;
+                        g.jatuhTempoStr = due ? fmtDateID(due) : '—';
+                        g.isOverdue = !!(due && daysBetween(due, today) > 0);
+                        g.umurOverdue = g.isOverdue ? daysBetween(due, today) : 0;
+                        g.umurOverdueStr = g.isOverdue ? g.umurOverdue + ' hari' : '—';
+                    } else {
+                        g.jatuhTempo = null;
+                        g.jatuhTempoStr = '—';
+                        g.isOverdue = false;
+                        g.umurOverdue = 0;
+                        g.umurOverdueStr = '—';
+                    }
                     out.push(g);
                 }
                 out.sort((a, b) => {
+                    // Yang sudah jatuh tempo (Tempo & overdue) naik ke atas dulu,
+                    // supaya yang paling mendesak langsung kelihatan.
+                    if (a.isOverdue && !b.isOverdue) return -1;
+                    if (b.isOverdue && !a.isOverdue) return 1;
+                    if ((a.umurOverdue || 0) !== (b.umurOverdue || 0)) return (b.umurOverdue || 0) - (a.umurOverdue || 0);
                     const ta = a.tglDate ? a.tglDate.getTime() : 0;
                     const tb = b.tglDate ? b.tglDate.getTime() : 0;
                     return tb - ta;
@@ -3842,7 +3866,11 @@
                         '<td>' + esc(r.sales) + '</td>' +
                         '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
                         '<td><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;color:#fff;background:' + tipeColor + ';">' +
-                            (r.tipeBayar === 'Cash' ? '💵 CASH' : '📅 TEMPO') + '</span></td>' +
+                            (r.tipeBayar === 'Cash' ? '💵 CASH' : '📅 TEMPO') + '</span>' +
+                            (r.isOverdue ? ' <span style="display:inline-block;margin-left:4px;padding:2px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;color:#fff;background:var(--red,#dc2626);">🚨 JT</span>' : '') +
+                        '</td>' +
+                        '<td>' + esc(r.jatuhTempoStr || '—') + '</td>' +
+                        '<td class="num">' + (r.isOverdue ? ('<strong style="color:var(--red)">' + esc(r.umurOverdueStr) + '</strong>') : '—') + '</td>' +
                         '<td class="num">' + r.items + '</td>' +
                         '<td class="muted">' + esc(r.alamat) + '</td>' +
                         '</tr>';
@@ -4135,6 +4163,7 @@
                     if (stFilter === 'not_in_sales') return r.fromSales === false;
                     if (stFilter === 'anomali_cash') return r.tipeBayar === 'Cash';
                     if (stFilter === 'anomali_tempo') return r.tipeBayar === 'Tempo';
+                    if (stFilter === 'anomali_tempo_overdue') return r.tipeBayar === 'Tempo' && r.isOverdue;
                     return true;
                 });
             }
@@ -4164,14 +4193,15 @@
             } else if (isAnomali) {
                 const nCash = rows.filter(r => r.tipeBayar === 'Cash').length;
                 const nTempo = rows.filter(r => r.tipeBayar === 'Tempo').length;
+                const nTempoOd = rows.filter(r => r.tipeBayar === 'Tempo' && r.isOverdue).length;
                 document.getElementById('cekCard1Label').textContent = 'Jml Faktur Anomali';
                 document.getElementById('cekCard2Label').textContent = 'Nominal Anomali';
                 document.getElementById('cekCard3Label').textContent = '💵 Anomali Cash';
-                document.getElementById('cekCard4Label').textContent = '📅 Anomali Tempo';
+                document.getElementById('cekCard4Label').textContent = '🚨 Tempo Sudah JT';
                 document.getElementById('cekCard1').textContent = nFaktur.toLocaleString('id-ID');
                 document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
                 document.getElementById('cekCard3').textContent = nCash.toLocaleString('id-ID');
-                document.getElementById('cekCard4').textContent = nTempo.toLocaleString('id-ID');
+                document.getElementById('cekCard4').textContent = nTempoOd.toLocaleString('id-ID');
             } else {
                 document.getElementById('cekCard1Label').textContent = 'Jml Faktur Dropping';
                 document.getElementById('cekCard2Label').textContent = 'Nominal Dropping';
@@ -4224,7 +4254,7 @@
             } else if (isAnomali) {
                 thead.innerHTML = '<tr>' +
                     '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
-                    '<th class="num">Nominal</th><th>Tipe</th><th class="num">Item</th><th>Alamat</th></tr>';
+                    '<th class="num">Nominal</th><th>Tipe</th><th>Jatuh Tempo</th><th class="num">Umur Overdue</th><th class="num">Item</th><th>Alamat</th></tr>';
             } else {
                 thead.innerHTML = '<tr>' +
                     '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
@@ -4293,13 +4323,16 @@
                     ]);
                 });
             } else if (isAnomali) {
-                aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Tipe (Cash/Tempo)', 'Jml Item',
-                    'Alamat'
+                aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Tipe (Cash/Tempo)',
+                    'Jatuh Tempo', 'Sudah Jatuh Tempo?', 'Umur Overdue (hari)', 'Jml Item', 'Alamat'
                 ]);
                 rows.forEach(r => {
                     aoa.push([
                         r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
-                        r.tipeBayar || '', r.items, r.alamat || ''
+                        r.tipeBayar || '', r.jatuhTempoStr || '—',
+                        r.isOverdue ? 'YA' : (r.tipeBayar === 'Tempo' ? 'Belum' : '—'),
+                        r.isOverdue ? r.umurOverdue : '',
+                        r.items, r.alamat || ''
                     ]);
                 });
             } else {
