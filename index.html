@@ -3697,6 +3697,25 @@
         // punya bobot & ambang beda sendiri-sendiri, jadi bisa saling kontradiksi.
         const CEK_FUZZY_THRESHOLD = 11;
 
+        // Normalisasi No.Faktur untuk perbandingan yang toleran terhadap beda
+        // format penomoran antar file (leading zero, spasi, strip/garis miring,
+        // huruf besar-kecil, dsb) -- TANPA mengubah nilai asli yang ditampilkan.
+        // Contoh: "0012345678" vs "12345678", "INV-001234" vs "inv 001234",
+        // "12345678 " vs "12345678" -> semua dianggap sama oleh fungsi ini.
+        function normFakturKey(v) {
+            let s = String(v || '').trim().toUpperCase();
+            if (!s) return '';
+            // Buang semua karakter selain huruf & angka (spasi, strip, titik, garis miring, dll)
+            s = s.replace(/[^A-Z0-9]/g, '');
+            if (!s) return '';
+            // Kalau full digit, buang leading zero supaya "012345" == "12345"
+            if (/^\d+$/.test(s)) {
+                const stripped = s.replace(/^0+/, '');
+                return stripped || '0';
+            }
+            return s;
+        }
+
         // Index kata (token) dari customer/alamat/sales sebuah koleksi record,
         // dipakai untuk mempersempit kandidat fuzzy-match tanpa scan semua data.
         // getFields(record) -> { customer, alamat, sales }.
@@ -3887,12 +3906,42 @@
             const today = new Date();
             const out = [];
             if (payType === 'ANOMALI') {
-                // Kumpulkan semua No.Faktur yang ADA di Data Uang Masuk (semua section),
-                // supaya "ada di Uang Masuk" berarti benar-benar ada di mana saja di file itu.
+                // Kumpulkan semua No.Faktur yang ADA di Data Uang Masuk (semua section).
+                // Dipetakan JUGA lewat normFakturKey supaya beda format penomoran murni
+                // (leading zero, spasi, strip/garis miring, huruf besar-kecil) antar file
+                // tidak dianggap "tidak ditemukan" alias false positive Anomali.
+                // umFakturSet     -> exact string (persis sama)
+                // umFakturNormMap -> key ternormalisasi -> daftar data record UM (untuk fuzzy fallback)
                 const umFakturSet = new Set();
+                const umByFaktur = new Map(); // exact faktur -> agregat record UM (dipakai fuzzy fallback)
                 for (const r of allRows) {
                     const fk = String(r.faktur || '').trim();
-                    if (fk) umFakturSet.add(fk);
+                    if (!fk) continue;
+                    umFakturSet.add(fk);
+                    if (!umByFaktur.has(fk)) {
+                        umByFaktur.set(fk, {
+                            paidAmount: 0, tagihanUM: 0, hasLunas: false, hasTitip: false,
+                            isPiutang: false, isDropping: false,
+                            dateLabel: '', salesName: '', toko: '', alamat: ''
+                        });
+                    }
+                    const u = umByFaktur.get(fk);
+                    u.tagihanUM = Math.max(u.tagihanUM, Number(r.tagihan) || 0);
+                    u.paidAmount += (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                        (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
+                    if (r.status === 'LUNAS') u.hasLunas = true;
+                    if (r.status === 'TITIP') u.hasTitip = true;
+                    if (!u.dateLabel && r.date) u.dateLabel = r.date;
+                    if (!u.salesName && r.sales) u.salesName = r.sales;
+                    if (!u.toko && r.toko && r.toko !== '—') u.toko = r.toko;
+                    if (!u.alamat && r.alamat && r.alamat !== '—') u.alamat = r.alamat;
+                }
+                const umFakturNormMap = new Map(); // normKey -> Set<fk asli>
+                for (const fk of umFakturSet) {
+                    const nk = normFakturKey(fk);
+                    if (!nk) continue;
+                    if (!umFakturNormMap.has(nk)) umFakturNormMap.set(nk, new Set());
+                    umFakturNormMap.get(nk).add(fk);
                 }
                 // Kelompokkan Data Penjualan per No.Faktur (SEMUA tipe pembayaran, Cash maupun Tempo)
                 const byFaktur = new Map();
@@ -3930,10 +3979,32 @@
                     if (!g.sales && r.sales) g.sales = r.sales;
                     if (!g.alamat && r.alamat) g.alamat = r.alamat;
                 }
+                // Tahap 1: faktur yang lolos exact ATAU normalized-match langsung
+                // dianggap ADA di Uang Masuk (bukan anomali) -- ini menutup celah
+                // false positive akibat beda format penomoran (leading zero, strip,
+                // spasi, huruf besar-kecil) yang seharusnya merujuk faktur yang sama.
+                const stillUnresolved = [];
+                for (const g of byFaktur.values()) {
+                    if (umFakturSet.has(g.noFaktur)) continue; // exact match -> aman
+                    const nk = normFakturKey(g.noFaktur);
+                    if (nk && umFakturNormMap.has(nk)) continue; // normalized match -> aman
+                    stillUnresolved.push(g);
+                }
+                // Tahap 2: sisanya (belum ketemu exact/normalized) dicoba fuzzy-match
+                // berdasarkan kemiripan customer/alamat/sales + tanggal + kemiripan
+                // No.Faktur, memakai infrastruktur yang sama dengan tab Tempo
+                // (resolveCekFuzzyMatchesGlobally). Ini menangani kasus format nomor
+                // faktur berbeda jauh, tapi transaksinya jelas sama (nominal & identitas
+                // cocok). Hanya faktur yang GAGAL di kedua tahap ini yang divonis Anomali.
+                const fuzzyUsedKeys = new Set();
+                const fuzzyResolved = await resolveCekFuzzyMatchesGlobally(stillUnresolved, umByFaktur, fuzzyUsedKeys);
                 // Anomali = faktur di Data Penjualan yang TIDAK ditemukan sama sekali
-                // (No.Faktur exact) di Data Uang Masuk.
+                // (exact, normalized, maupun fuzzy) di Data Uang Masuk.
                 for (const g of byFaktur.values()) {
                     if (umFakturSet.has(g.noFaktur)) continue;
+                    const nk = normFakturKey(g.noFaktur);
+                    if (nk && umFakturNormMap.has(nk)) continue;
+                    if (fuzzyResolved.has(g.noFaktur)) continue;
                     g.statusCek = 'Anomali';
                     g.pembayaran = g.tipeBayar;
                     // Jatuh tempo hanya relevan untuk anomali bertipe Tempo (Cash tidak
@@ -5638,5 +5709,6 @@
             installApp, toggleRingkasanRupaShowAll
         });
     </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
 </body>
 </html>
