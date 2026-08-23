@@ -221,9 +221,10 @@ export function sectionBadge(s) {
 export function statusBadgeCek(rOrSt) {
     const st = (rOrSt && typeof rOrSt === 'object') ? rOrSt.statusCek : rOrSt;
     const umur = (rOrSt && typeof rOrSt === 'object') ? (rOrSt.umurOverdue || 0) : 0;
+    const overdue = !!(rOrSt && typeof rOrSt === 'object' && rOrSt.isOverdue);
     if (st === 'Lunas') return '<span class="badge badge-lunas">LUNAS</span>';
     if (st === 'Overdue') return '<span class="badge badge-retur">OVERDUE ' + umur + ' hr</span>';
-    if (st === 'Titip') return '<span class="badge badge-titip">TITIP</span>';
+    if (st === 'Titip') return '<span class="badge badge-titip">TITIP</span>' + (overdue ? ' <span class="badge badge-retur">OVERDUE ' + umur + ' hr</span>' : '');
     if (st === 'Belum Jatuh Tempo') return '<span class="badge badge-tf">BELUM JT</span>';
     return '<span class="badge badge-section">' + esc(st || '') + '</span>';
 }
@@ -286,6 +287,37 @@ export function cekTextSimilar(a, b) {
     b = normCekText(b);
     if (!a || !b) return false;
     return a === b || a.includes(b) || b.includes(a);
+}
+
+
+/**
+ * Ambil snapshot pembayaran terakhir dari agregat Data Uang Masuk.
+ * Di aplikasi ini field `tagihan` berarti tagihan/sisa TERAKHIR, bukan nilai
+ * faktur awal. Fungsi ini menjadi satu sumber logika untuk Cek Data.
+ * @param {object|null} u Agregat Uang Masuk per faktur.
+ * @param {number} [fallback=0] Nominal fallback bila tidak ada tagihan UM.
+ * @returns {{tagihan:number,pembayaran:number,status:string,tanggal:string,referenceAmount:number}}
+ */
+export function latestPaymentSnapshot(u, fallback = 0) {
+    const x = u || {};
+    const tagihan = Number(x.latestTagihan) || Number(x.tagihanUM) || 0;
+    const pembayaran = Number(x.latestPaidAmount) || 0;
+    const referenceAmount = tagihan || Number(fallback) || 0;
+    return {
+        tagihan,
+        pembayaran,
+        status: String(x.latestStatus || ''),
+        tanggal: String(x.latestDateLabel || ''),
+        referenceAmount
+    };
+}
+
+/**
+ * Nominal yang dipakai fuzzy matching pembayaran. Prioritasnya selalu
+ * tagihan terakhir Uang Masuk, sesuai aturan bisnis aplikasi.
+ */
+export function cekPaymentReferenceAmount(u, fallback = 0) {
+    return latestPaymentSnapshot(u, fallback).referenceAmount;
 }
 
 /**
