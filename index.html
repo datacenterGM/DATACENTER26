@@ -113,6 +113,10 @@
         .sales-cards.show { display: grid; }
         #fakturCards.show { grid-template-columns: repeat(3, 1fr); }
         #salesCards.show { grid-template-columns: repeat(5, 1fr); }
+        /* Samakan ketebalan card dengan gaya Cek Data (lebih tipis/padat) */
+        #fakturCards.show .scard, #salesCards.show .scard { padding: 5px 7px; min-width: 0; }
+        #fakturCards.show .sc-label, #salesCards.show .sc-label { font-size: 0.50rem; letter-spacing: 0; }
+        #fakturCards.show .sc-value, #salesCards.show .sc-value { font-size: 0.76rem; }
         .scard { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; position: relative; overflow: hidden; box-shadow: none; min-width: 0; }
         .scard .sc-label { font-size: 0.58rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; line-height: 1.2; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .scard .sc-value { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1310,6 +1314,21 @@
                 try {
                   // XLSX library harus di-import di worker? Kita inject dengan importScripts dari CDN
                   importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+                  // detectMonth/MONTH_ORDER tidak ikut ter-import dari modul utama ke
+                  // dalam scope Worker, jadi didefinisikan ulang di sini (harus tetap
+                  // sinkron dengan js/utils.js).
+                  const MONTH_ORDER = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember','Lainnya'];
+                  function detectMonth(sheetName, dateLabel) {
+                    const src = (dateLabel + ' ' + sheetName).toUpperCase();
+                    let m = src.match(/\\/(\\d{1,2})\\/(\\d{4})/);
+                    if (m) return MONTH_ORDER[parseInt(m[1], 10) - 1] || null;
+                    m = src.match(/(\\d{1,2})-(\\d{2})/);
+                    if (m) return MONTH_ORDER[parseInt(m[2], 10) - 1] || null;
+                    for (const [k, v] of Object.entries(MONTH_ORDER)) {
+                      if (src.includes(k) && k.length > 2) return v;
+                    }
+                    return null;
+                  }
                   const wb = XLSX.read(fileData, { type: 'array', cellDates: true });
                   // Parse workbook (sama seperti parseWorkbook)
                   const rows = [];
@@ -1997,6 +2016,21 @@
                   const { fileData, fileName } = e.data;
                   try {
                     importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+                    // detectMonth/MONTH_ORDER tidak ikut ter-import dari modul utama ke
+                    // dalam scope Worker, jadi didefinisikan ulang di sini (harus tetap
+                    // sinkron dengan js/utils.js).
+                    const MONTH_ORDER = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember','Lainnya'];
+                    function detectMonth(sheetName, dateLabel) {
+                      const src = (dateLabel + ' ' + sheetName).toUpperCase();
+                      let m = src.match(/\\/(\\d{1,2})\\/(\\d{4})/);
+                      if (m) return MONTH_ORDER[parseInt(m[1], 10) - 1] || null;
+                      m = src.match(/(\\d{1,2})-(\\d{2})/);
+                      if (m) return MONTH_ORDER[parseInt(m[2], 10) - 1] || null;
+                      for (const [k, v] of Object.entries(MONTH_ORDER)) {
+                        if (src.includes(k) && k.length > 2) return v;
+                      }
+                      return null;
+                    }
                     const wb = XLSX.read(fileData, { type: 'array', cellDates: true });
                     // Parse (sama seperti parseSalesWorkbook)
                     const rows = [];
