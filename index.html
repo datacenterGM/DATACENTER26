@@ -2037,6 +2037,7 @@
                 (dateAnomaly ? '<div class="modal-stat"><div class="l">Seharusnya Jatuh Tempo</div><div class="v" style="color:var(--red)">' + esc(expectedDueStr) + '</div></div>' : '') +
                 '<div class="modal-stat"><div class="l">Nilai Faktur Awal</div><div class="v">' + fmt(nominal) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Tagihan Terakhir</div><div class="v" style="color:var(--yellow)">' + fmt(tagihanTerakhir) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Tgl Catatan Uang Masuk Terakhir</div><div class="v">' + esc(row.tagihanUMDate ? fmtCekTanggalTampilan(row.tagihanUMDate, parseSalesDate(row.tagihanUMDate)) : '—') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Bayar Tagihan Terakhir</div><div class="v" style="color:var(--green)">' + fmt(paid) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Sisa Tagihan Terakhir</div><div class="v" style="color:' + (sisa > 0 ? 'var(--yellow)' : 'var(--green)') + '">' + (sisa > 0 ? fmt(sisa) : '0 (lunas)') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Umur Overdue</div><div class="v" style="color:' + (sudahJT && !isLunas ? 'var(--red)' : 'var(--text)') + '">' + (sudahJT && !isLunas ? overdueDays + ' hari' : '—') + '</div></div>';
@@ -2058,7 +2059,9 @@
                 conclusion += '<br><div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);color:var(--red);"><b>⚠ ANOMALI TANGGAL</b><br>' + esc(dateCheck.reason || 'Tanggal jatuh tempo tidak sesuai.') + '<br><b>Seharusnya:</b> ' + esc(expectedDueStr) + ' (' + CEK_TEMPO_DAYS + ' hari setelah transaksi).</div>';
             }
 
-            if (row.paymentMatch === 'FUZZY') {
+            if (row.fromSales === false) {
+                conclusion += '<br><div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(217,119,6,.10);border:1px solid rgba(217,119,6,.35);color:var(--yellow);"><b>⚠ TIDAK DITEMUKAN DI DATA PENJUALAN</b><br>Faktur ini hanya tercatat di <b>Data Uang Masuk</b> (bagian Piutang) — sistem sudah mencoba mencocokkan nomor faktur ini persis maupun mirip (fuzzy, berdasarkan toko/sales/tanggal/nominal) ke <b>seluruh</b> Data Penjualan, tapi tidak ketemu. Karena itu semua angka di atas (Nilai Faktur Awal, Tanggal Transaksi, Jatuh Tempo) dihitung murni dari catatan Uang Masuk, bukan dari baris penjualan. Kalau field <b>Bayar Tagihan Terakhir</b> menunjukkan 0, artinya memang belum ada uang masuk yang tercatat untuk tagihan ini — bukan data yang disembunyikan. Cek apakah faktur ini sudah diinput di Data Penjualan, atau nomornya salah ketik.</div>';
+            } else if (row.paymentMatch === 'FUZZY') {
                 conclusion += '<br><span style="color:var(--muted);">🔎 Pembayaran ditemukan melalui rekonsiliasi Customer/Alamat/Sales/Nominal. No.Faktur di Uang Masuk: <b>' + esc(row.paymentMatchFaktur || '—') + '</b>.</span>';
             } else {
                 conclusion += '<br><span style="color:var(--muted);">🔗 Pembayaran terhubung melalui No.Faktur.</span>';
