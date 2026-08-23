@@ -980,7 +980,7 @@
             addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
             currentMonthName, preferredMonth, detectMonth, statusBadge,
             sectionBadge, statusBadgeCek, normalizeSearchText, flexibleSearchMatch,
-            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, cekFakturSimilarity, chunkedFilter, yieldToMain
+            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, cekFakturSimilarity, latestPaymentSnapshot, cekPaymentReferenceAmount, chunkedFilter, yieldToMain
         } from './js/utils.js';
         import {
             DB_NAME, DB_VERSION, DB_STORE, DB_KEY, DB_KEY_SALES, DB_KEY_RAPIKAN,
@@ -3930,7 +3930,7 @@
                     const u = umByFaktur.get(fk);
                     if (!u) continue;
                     const paymentAmount = Number(u.paidAmount) || 0;
-                    const referenceAmount = Number(u.latestTagihan) || Number(u.tagihanUM) || Number(g.nominal) || 0;
+                    const referenceAmount = cekPaymentReferenceAmount(u, g.nominal);
                     if (!paymentAmount && !u.hasLunas) continue;
                     const amountScoreValue = cekAmountScore(paymentAmount, referenceAmount);
                     if (!amountScoreValue && !u.hasLunas) continue;
@@ -4360,10 +4360,11 @@
                     const u = resolvedUM.get(g.noFaktur);
                     // Status tagihan memakai BARIS TERAKHIR Uang Masuk:
                     // tagihan terakhir dibandingkan dengan pembayaran pada baris terakhir.
-                    const paidAmount = u ? (Number(u.latestPaidAmount) || 0) : 0;
-                    const tagihanUM = u ? (Number(u.latestTagihan) || 0) : 0;
-                    const hasLunas = u ? (u.latestStatus === 'LUNAS') : false;
-                    const hasTitip = u ? (u.latestStatus === 'TITIP') : false;
+                    const paymentSnapshot = latestPaymentSnapshot(u, g.nominal);
+                    const paidAmount = paymentSnapshot.pembayaran;
+                    const tagihanUM = paymentSnapshot.tagihan;
+                    const hasLunas = paymentSnapshot.status === 'LUNAS';
+                    const hasTitip = paymentSnapshot.status === 'TITIP';
                     const isPiutang = u ? u.isPiutang : false;
                     const totalPaidHistory = u ? (Number(u.paidAmount) || 0) : 0;
 
