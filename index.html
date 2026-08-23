@@ -180,81 +180,8 @@
         .profit-table tr:hover td { background: var(--table-hover); }
         .profit-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .profit-table .total-row td { font-weight: 700; border-top: 2px solid var(--border); background: var(--th-bg); }
-        .hj-clickable {
-            cursor: pointer;
-            position: relative;
-            text-decoration: none;
-            font-weight: 700;
-            color: var(--text);
-            white-space: nowrap;
-            transition: all .15s ease;
-        }
+        .hj-clickable { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
         .hj-clickable:hover { color: var(--accent); }
-        .hj-range {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 7px;
-            border: 1px solid var(--border);
-            border-radius: 7px;
-            background: var(--bg);
-            line-height: 1.2;
-        }
-        .hj-range .hj-high { color: var(--muted); font-weight: 600; }
-        .hj-range .hj-arrow { color: var(--muted); font-weight: 500; }
-        .hj-range .hj-low {
-            color: var(--text);
-            font-weight: 800;
-            background: var(--yellow-bg);
-            border-radius: 5px;
-            padding: 2px 5px;
-        }
-        .hj-single {
-            display: inline-block;
-            padding: 3px 7px;
-            border-radius: 7px;
-        }
-        .hj-clickable:hover .hj-range {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 2px var(--accent-soft);
-        }
-        .hj-hint {
-            display: block;
-            margin-top: 3px;
-            font-size: .58rem;
-            color: var(--muted);
-            font-weight: 500;
-            text-align: right;
-        }
-        .hj-modal-summary {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
-            margin: 0 0 12px;
-        }
-        .hj-modal-stat {
-            border: 1px solid var(--border);
-            background: var(--bg);
-            border-radius: 8px;
-            padding: 8px 10px;
-        }
-        .hj-modal-stat .label { font-size: .65rem; color: var(--muted); text-transform: uppercase; font-weight: 700; }
-        .hj-modal-stat .value { margin-top: 2px; font-size: .92rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-        .hj-modal-stat.low .value { color: var(--text); }
-        .hj-modal-note {
-            margin: 0 0 10px; padding: 7px 9px; border-radius: 7px;
-            background: var(--yellow-bg); border: 1px solid var(--border);
-            font-size: .72rem; color: var(--text);
-        }
-        .harga-jual-table tbody tr.hj-min-row td { background: var(--yellow-bg) !important; font-weight: 600; }
-        .hj-min-badge {
-            display: inline-block; margin-left: 4px; padding: 2px 5px; border-radius: 5px;
-            font-size: .62rem; font-weight: 800; background: var(--yellow-bg);
-            border: 1px solid var(--border);
-        }
-        @media (max-width:560px) {
-            .hj-modal-summary { grid-template-columns: 1fr; }
-        }
         .profit-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.78rem; font-weight: 700; }
         .ringkasan-rupa-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-weight: 400; }
         .ringkasan-rupa-controls input, .ringkasan-rupa-controls select { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 0.75rem; outline: none; }
@@ -979,14 +906,8 @@
                     <button class="modal-close" onclick="closeHargaJualModal()">✕</button>
                 </div>
                 <div class="muted" id="hargaJualModalSub" style="margin-bottom:10px;font-size:0.8rem;"></div>
-                <div class="hj-modal-summary">
-                    <div class="hj-modal-stat"><div class="label">Harga Tertinggi</div><div class="value" id="hargaJualModalMax">—</div></div>
-                    <div class="hj-modal-stat low"><div class="label">Harga Terendah</div><div class="value" id="hargaJualModalMin">—</div></div>
-                    <div class="hj-modal-stat"><div class="label">Jumlah Transaksi</div><div class="value" id="hargaJualModalCount">—</div></div>
-                </div>
-                <div class="hj-modal-note">💡 <b>Harga terendah</b> diberi tanda dan otomatis berada di bagian paling atas.</div>
                 <div style="overflow-x:auto;">
-                    <table class="modal-table harga-jual-table">
+                    <table class="modal-table">
                         <thead>
                             <tr><th>Tanggal</th><th>No Faktur</th><th class="num">Jumlah</th><th class="num">Harga Jual</th><th class="num">Disc</th><th class="num">Total</th><th>Sales</th><th>Customer</th></tr>
                         </thead>
@@ -2052,9 +1973,10 @@
             const row = (lastCekRows || []).find(r => String(r.noFaktur || '') === faktur);
             if (!row) return;
 
-            const nominal = Number(row.nominal) || 0;
-            const paid = Number(row.paidAmount) || 0;
-            const sisa = Math.max(0, nominal - paid);
+            const nominal = Number(row.nominal) || 0; // nilai faktur awal dari Data Penjualan
+            const tagihanTerakhir = Number(row.tagihanUM) || 0; // sisa/tagihan terakhir dari Uang Masuk
+            const paid = Number(row.paidAmount) || 0; // pembayaran pada baris/tagihan terakhir
+            const sisa = Math.max(0, tagihanTerakhir - paid);
             const due = row.jatuhTempo instanceof Date && !isNaN(row.jatuhTempo) ? row.jatuhTempo : null;
             // Tanggal transaksi ditampilkan hasil NORMALISASI (sama seperti kolom
             // "Tgl Transaksi" di tabel), bukan teks mentah row.tanggal. Teks mentah
@@ -2107,22 +2029,23 @@
                 '<div class="modal-stat"><div class="l">Tanggal Transaksi</div><div class="v">' + esc(tglTransaksiFull || '—') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Jatuh Tempo</div><div class="v">' + esc(row.jatuhTempoStr || '—') + '</div></div>' +
                 (dateAnomaly ? '<div class="modal-stat"><div class="l">Seharusnya Jatuh Tempo</div><div class="v" style="color:var(--red)">' + esc(expectedDueStr) + '</div></div>' : '') +
-                '<div class="modal-stat"><div class="l">Tagihan</div><div class="v">' + fmt(nominal) + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Sudah Bayar</div><div class="v" style="color:var(--green)">' + fmt(paid) + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Sisa</div><div class="v" style="color:' + (sisa > 0 ? 'var(--yellow)' : 'var(--green)') + '">' + fmt(sisa) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Nilai Faktur Awal</div><div class="v">' + fmt(nominal) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Tagihan Terakhir</div><div class="v" style="color:var(--yellow)">' + fmt(tagihanTerakhir) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Bayar Tagihan Terakhir</div><div class="v" style="color:var(--green)">' + fmt(paid) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Sisa Tagihan Terakhir</div><div class="v" style="color:' + (sisa > 0 ? 'var(--yellow)' : 'var(--green)') + '">' + (sisa > 0 ? fmt(sisa) : '0 (lunas)') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Umur Overdue</div><div class="v" style="color:' + (sudahJT && !isLunas ? 'var(--red)' : 'var(--text)') + '">' + (sudahJT && !isLunas ? overdueDays + ' hari' : '—') + '</div></div>';
 
             let conclusion = '';
             if (isLunas) {
                 conclusion = '<strong>Kesimpulan:</strong> Faktur sudah <b>LUNAS</b>.';
             } else if (isTitip && sudahJT) {
-                conclusion = '<strong>Kesimpulan:</strong> Ada pembayaran <b>TITIP / SEBAGIAN</b> sebesar <b>' + fmt(paid) + '</b>, tetapi faktur <b>sudah jatuh tempo</b> dan masih tersisa <b>' + fmt(sisa) + '</b>. Jadi ini perlu ditindaklanjuti sebagai <b>TITIP YANG SUDAH OVERDUE</b>.';
+                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>, tetapi faktur <b>sudah jatuh tempo</b> dan sisa tagihan terakhir <b>' + fmt(sisa) + '</b>. Jadi ini perlu ditindaklanjuti sebagai <b>TITIP YANG SUDAH OVERDUE</b>.';
             } else if (isTitip) {
-                conclusion = '<strong>Kesimpulan:</strong> Faktur menerima pembayaran <b>TITIP / SEBAGIAN</b> sebesar <b>' + fmt(paid) + '</b>. Jatuh tempo masih <b>' + esc(row.jatuhTempoStr || '—') + '</b>.';
+                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b> dan jatuh tempo masih <b>' + esc(row.jatuhTempoStr || '—') + '</b>.';
             } else if (sudahJT) {
-                conclusion = '<strong>Kesimpulan:</strong> Faktur <b>belum lunas</b> dan <b>sudah overdue ' + overdueDays + ' hari</b>. Sisa tagihan <b>' + fmt(sisa) + '</b>.';
+                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas dan <b>sudah overdue ' + overdueDays + ' hari</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
             } else {
-                conclusion = '<strong>Kesimpulan:</strong> Faktur belum lunas tetapi <b>belum jatuh tempo</b>.';
+                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas tetapi <b>belum jatuh tempo</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
             }
 
             if (dateAnomaly) {
@@ -2264,38 +2187,24 @@
             const rows = scopeRows.filter(r => (r.produk || '').trim() === produk);
             document.getElementById('hargaJualModalTitle').textContent = '💲 Detail Harga Jual — ' + produk;
             document.getElementById('hargaJualModalSub').textContent = getSalesPeriodLabel() + ' · ' + rows.length
-                .toLocaleString('id-ID') + ' transaksi · urutan harga terendah → tertinggi';
-
-            const minEl = document.getElementById('hargaJualModalMin');
-            const maxEl = document.getElementById('hargaJualModalMax');
-            const countEl = document.getElementById('hargaJualModalCount');
-
+                .toLocaleString('id-ID') + ' transaksi, diurutkan dari harga terendah';
             if (!rows.length) {
-                minEl.textContent = '—';
-                maxEl.textContent = '—';
-                countEl.textContent = '0';
                 document.getElementById('hargaJualModalBody').innerHTML =
                     '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">Tidak ada data.</td></tr>';
                 document.getElementById('hargaJualModal').classList.add('open');
                 return;
             }
-
             const sorted = rows.slice().sort((a, b) => (a.hargaJual || 0) - (b.hargaJual || 0));
-            const validPrices = sorted.map(r => Number(r.hargaJual) || 0).filter(v => v > 0);
+            const validPrices = sorted.map(r => r.hargaJual || 0).filter(v => v > 0);
             const minHj = validPrices.length ? Math.min(...validPrices) : 0;
-            const maxHj = validPrices.length ? Math.max(...validPrices) : 0;
-
-            minEl.textContent = minHj ? fmt(minHj) : '—';
-            maxEl.textContent = maxHj ? fmt(maxHj) : '—';
-            countEl.textContent = rows.length.toLocaleString('id-ID');
-
             document.getElementById('hargaJualModalBody').innerHTML = sorted.map(r => {
-                const isMin = Number(r.hargaJual) === minHj && minHj > 0;
-                return '<tr class="' + (isMin ? 'hj-min-row' : '') + '">' +
+                const isMin = r.hargaJual && r.hargaJual === minHj;
+                return '<tr' + (isMin ? ' style="background:var(--yellow-bg);"' : '') + '>' +
                     '<td>' + esc(r.tanggal) + '</td>' +
-                    '<td><strong>' + esc(r.noFaktur) + '</strong></td>' +
+                    '<td>' + esc(r.noFaktur) + '</td>' +
                     '<td class="num">' + (r.jumlah || 0).toLocaleString('id-ID') + '</td>' +
-                    '<td class="num">' + (isMin ? '<strong>' : '') + fmt(r.hargaJual) + (isMin ? ' <span class="hj-min-badge">⬅ TERENDAH</span></strong>' : '') + '</td>' +
+                    '<td class="num">' + (isMin ? '<strong>' : '') + fmt(r.hargaJual) + (isMin ?
+                        ' ⬅ terendah</strong>' : '') + '</td>' +
                     '<td class="num">' + fmt(r.disc) + '</td>' +
                     '<td class="num">' + fmt(r.total) + '</td>' +
                     '<td>' + esc(r.sales) + '</td>' +
@@ -3173,10 +3082,9 @@
                 sumJual += r.totalPenjualan;
                 sumHpp += r.totalHpp;
                 sumProfit += r.profit;
-                const isRange = typeof r.hargaJual === 'object' && r.hargaJual.isRange;
-                const hjDisplay = isRange
-                    ? '<span class="hj-range"><span class="hj-high">' + fmt(r.hargaJual.max) + '</span><span class="hj-arrow">→</span><span class="hj-low">' + fmt(r.hargaJual.min) + '</span></span><span class="hj-hint">harga terendah ditandai</span>'
-                    : '<span class="hj-single">' + fmt(r.hargaJual) + '</span>';
+                const hjDisplay = typeof r.hargaJual === 'object' && r.hargaJual.isRange 
+                    ? fmt(r.hargaJual.max) + ' - ' + fmt(r.hargaJual.min)
+                    : fmt(r.hargaJual);
                 const hjCell = r.hargaJual ? '<td class="num hj-clickable" onclick="openHargaJualModal(\'' +
                     esc(r.produk).replace(/'/g, "\\'") + '\')" title="Klik untuk lihat detail transaksi per harga jual">' +
                     hjDisplay + '</td>' : '<td class="num">' + hjDisplay + '</td>';
@@ -3773,19 +3681,12 @@
             sel.value = validValues.includes(cur) ? cur : 'all';
         }
 
-        // ---- Badge: faktur berasal dari Uang Masuk/Piutang, tetapi tidak ditemukan di Data Penjualan ----
+        // ---- Badge: faktur yang cuma ada di Uang Masuk, tidak ketemu di Data Penjualan ----
         function notInSalesBadge(r) {
             if (r.fromSales !== false) return '';
-            const hasPayment = (Number(r.paidAmount) || 0) > 0;
-            const label = hasPayment
-                ? '💰 Ada pembayaran · ⚠ Data tidak ada di Penjualan'
-                : '📥 Ada data di Uang Masuk · ⚠ Data tidak ada di Penjualan';
-            const title = hasPayment
-                ? 'Faktur ditemukan dari Data Uang Masuk dan memiliki pembayaran, tetapi nomor faktur tersebut tidak ditemukan di Data Penjualan.'
-                : 'Faktur ditemukan dari Data Uang Masuk/Piutang, tetapi nomor faktur tersebut tidak ditemukan di Data Penjualan dan belum ada nominal pembayaran yang teridentifikasi.';
-            return '<span title="' + title + '" ' +
-                'style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:6px;font-size:0.65rem;font-weight:700;' +
-                'background:var(--yellow-bg);color:var(--yellow);white-space:nowrap;vertical-align:middle;">' + label + '</span>';
+            return '<span title="Faktur ini ada di Uang Masuk, tapi tidak ditemukan di Data Penjualan. Nominal/Item mungkin tidak lengkap." ' +
+                'style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:0.65rem;font-weight:700;' +
+                'background:var(--yellow-bg);color:var(--yellow);white-space:nowrap;vertical-align:middle;">⚠ Tidak di Penjualan</span>';
         }
 
         // ---- Cek cache ----
@@ -4223,9 +4124,22 @@
                         });
                     }
                     const u = umByFaktur.get(fk);
-                    u.tagihanUM = Math.max(u.tagihanUM, Number(r.tagihan) || 0);
-                    u.paidAmount += (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                    const rowPaid = (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
                         (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
+                    const rowSort = dateSortKey(r.date, r.sheet);
+                    // Di Uang Masuk, Tagihan adalah TAGIHAN TERAKHIR / sisa
+                    // tagihan pada saat pencatatan. Jadi jangan gunakan Math.max().
+                    if (!u.latestSort || rowSort >= u.latestSort) {
+                        u.latestSort = rowSort;
+                        u.latestDateLabel = r.date || '';
+                        u.latestTagihan = Number(r.tagihan) || 0;
+                        u.latestPaidAmount = rowPaid;
+                        u.latestStatus = r.status || '';
+                        u.latestSheet = r.sheet || '';
+                    }
+                    // Total historis tetap disimpan, tetapi tidak dipakai untuk
+                    // menentukan LUNAS pada tagihan terakhir.
+                    u.paidAmount += rowPaid;
                     if (r.status === 'LUNAS') u.hasLunas = true;
                     if (r.status === 'TITIP') u.hasTitip = true;
                     const sec = String(r.section || '').toUpperCase();
@@ -4315,11 +4229,14 @@
                 }
                 for (const g of byFaktur.values()) {
                     const u = resolvedUM.get(g.noFaktur);
-                    const paidAmount = u ? u.paidAmount : 0;
-                    const tagihanUM = u ? u.tagihanUM : 0;
-                    const hasLunas = u ? u.hasLunas : false;
-                    const hasTitip = u ? u.hasTitip : false;
+                    // Status tagihan memakai BARIS TERAKHIR Uang Masuk:
+                    // tagihan terakhir dibandingkan dengan pembayaran pada baris terakhir.
+                    const paidAmount = u ? (Number(u.latestPaidAmount) || 0) : 0;
+                    const tagihanUM = u ? (Number(u.latestTagihan) || 0) : 0;
+                    const hasLunas = u ? (u.latestStatus === 'LUNAS') : false;
+                    const hasTitip = u ? (u.latestStatus === 'TITIP') : false;
                     const isPiutang = u ? u.isPiutang : false;
+                    const totalPaidHistory = u ? (Number(u.paidAmount) || 0) : 0;
 
                     if (u) {
                         if (!g.sales && u.salesName) g.sales = u.salesName;
@@ -4333,7 +4250,9 @@
                     }
 
                     g.paidAmount = paidAmount;
+                    g.paidAmountHistory = totalPaidHistory;
                     g.tagihanUM = tagihanUM;
+                    g.tagihanUMDate = u ? (u.latestDateLabel || '') : '';
                     g.paid = hasLunas || (tagihanUM > 0 && paidAmount >= tagihanUM - 1);
                     g.pembayaran = isPiutang ? 'Piutang' : 'Tempo';
 
