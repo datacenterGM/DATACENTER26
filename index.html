@@ -648,6 +648,7 @@
             <div class="subtabs show" id="cekSubtabs" style="display:flex;">
                 <button class="cek-subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
                 <button class="cek-subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
+                <button class="cek-subtab-btn" id="cekSubAnomali" onclick="switchCekSub('anomali')">🚨 Anomali</button>
                 <div class="subtab-dl-wrap cek-download-wrap" id="cekDownloadWrap">
                     <button type="button" class="subtab-dl" id="cekDownloadBtn" onclick="toggleCekDownloadMenu(event)">📥 Download ▾</button>
                     <div class="subtab-dl-menu" id="cekDownloadMenu">
@@ -662,12 +663,12 @@
                 <div class="scard"><div class="sc-label" id="cekCard2Label">Nominal</div><div class="sc-value" id="cekCard2">0</div></div>
                 <div class="scard"><div class="sc-label" id="cekCard3Label">—</div><div class="sc-value" id="cekCard3">0</div></div>
                 <div class="scard"><div class="sc-label" id="cekCard4Label">—</div><div class="sc-value" id="cekCard4">0</div></div>
-                <div class="scard"><div class="sc-label">Nominal Lunas</div><div class="sc-value" id="cekCardLunas">0</div></div>
-                <div class="scard"><div class="sc-label">Diterima dr Titip</div><div class="sc-value" id="cekCardTitip">0</div></div>
-                <div class="scard"><div class="sc-label">🟢 Teridentifikasi CASH</div><div class="sc-value" id="cekCardUMCash">0</div></div>
-                <div class="scard"><div class="sc-label">🔵 Teridentifikasi TEMPO</div><div class="sc-value" id="cekCardUMTempo">0</div></div>
-                <div class="scard" id="cekCardCrossWrap"><div class="sc-label">💰 TOTAL UANG MASUK</div><div class="sc-value" id="cekCardUMTotal">0</div></div>
-                <div class="scard"><div class="sc-label">🟡 BELUM TERIDENTIFIKASI</div><div class="sc-value" id="cekCardUMUnidentified">0</div></div>
+                <div class="scard cek-recon-card"><div class="sc-label">Nominal Lunas</div><div class="sc-value" id="cekCardLunas">0</div></div>
+                <div class="scard cek-recon-card"><div class="sc-label">Diterima dr Titip</div><div class="sc-value" id="cekCardTitip">0</div></div>
+                <div class="scard cek-recon-card"><div class="sc-label">🟢 Teridentifikasi CASH</div><div class="sc-value" id="cekCardUMCash">0</div></div>
+                <div class="scard cek-recon-card"><div class="sc-label">🔵 Teridentifikasi TEMPO</div><div class="sc-value" id="cekCardUMTempo">0</div></div>
+                <div class="scard cek-recon-card" id="cekCardCrossWrap"><div class="sc-label">💰 TOTAL UANG MASUK</div><div class="sc-value" id="cekCardUMTotal">0</div></div>
+                <div class="scard cek-recon-card"><div class="sc-label">🟡 BELUM TERIDENTIFIKASI</div><div class="sc-value" id="cekCardUMUnidentified">0</div></div>
             </div>
 
             <div class="search-bar show" id="cekSearchBar" style="display:flex;">
@@ -714,6 +715,7 @@
                 <div class="hint">
                     Sub-tab <b>Cash</b> = faktur <b>Cash Dropping</b> dari tab Uang Masuk.<br>
                     Sub-tab <b>Tempo</b> = faktur dari Data Penjualan yang pembayarannya <b>bukan Cash</b> (kosong / Tempo / Kredit) <b>atau</b> faktur Piutang di Uang Masuk.<br>
+                    Sub-tab <b>Anomali</b> = faktur yang tercatat di <b>Data Penjualan</b> tapi <b>tidak ditemukan sama sekali</b> di <b>Data Uang Masuk</b> — kemungkinan besar belum dibayar / belum tercatat pembayarannya.<br>
                     Pastikan di tab <b>Data Penjualan</b> sudah ada data dan kolom Pembayaran terisi (atau biarkan kosong agar dianggap Tempo).
                 </div>
             </div>
@@ -875,8 +877,8 @@
         let fakturLastPayMap = {};
         let salesFakturMapDirty = true;
         let salesFakturMap = new Map(); // Map<faktur, agregat>
-        let cekFakturCacheDirty = { cash: true, tempo: true };
-        let cekFakturCache = { cash: [], tempo: [] };
+        let cekFakturCacheDirty = { cash: true, tempo: true, anomali: true };
+        let cekFakturCache = { cash: [], tempo: [], anomali: [] };
         let lastCekRows = []; // baris hasil render terakhir Cek Data (dipakai modal detail Tempo)
         const CEK_TEMPO_DAYS = 12; // aturan jatuh tempo: transaksi + N hari
 
@@ -1581,12 +1583,14 @@
             fakturIndexDirty = true;
             cekFakturCacheDirty.cash = true;
             cekFakturCacheDirty.tempo = true;
+            cekFakturCacheDirty.anomali = true;
         }
 
         function invalidateSalesIndex() {
             salesFakturMapDirty = true;
             cekFakturCacheDirty.cash = true;
             cekFakturCacheDirty.tempo = true;
+            cekFakturCacheDirty.anomali = true;
         }
 
         // ---- Build LastPayMap ----
@@ -1891,6 +1895,16 @@
             const paid = Number(row.paidAmount) || 0;
             const sisa = Math.max(0, nominal - paid);
             const due = row.jatuhTempo instanceof Date && !isNaN(row.jatuhTempo) ? row.jatuhTempo : null;
+            // Tanggal transaksi ditampilkan hasil NORMALISASI (sama seperti kolom
+            // "Tgl Transaksi" di tabel), bukan teks mentah row.tanggal. Teks mentah
+            // dari sumber data kadang berurutan MM/DD, jadi kalau ditampilkan apa
+            // adanya bisa terbaca sebagai tanggal lain (mis. "08/05/2026" terlihat
+            // seperti 8 Mei, padahal sebenarnya 5 Agustus) meski jatuh tempo yang
+            // dihitung sistem sudah benar berdasarkan tanggal aslinya.
+            const ID_HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+            const tglDateForDisplay = row.tglDate instanceof Date && !isNaN(row.tglDate) ? row.tglDate : parseSalesDate(row.tanggal);
+            const tglTransaksiStr = fmtCekTanggalTampilan(row.tanggal, row.tglDate);
+            const tglTransaksiFull = tglDateForDisplay ? (ID_HARI[tglDateForDisplay.getDay()] + ', ' + tglTransaksiStr) : tglTransaksiStr;
             // isOverdue & paymentStatus sudah dihitung sekali di buildCekFakturList
             // (satu sumber logika untuk tabel, kartu, filter, dan modal ini).
             const overdueDays = Number(row.umurOverdue) || 0;
@@ -1929,7 +1943,7 @@
             document.getElementById('cekTempoModalStatus').innerHTML = statusHtml;
 
             document.getElementById('cekTempoModalStats').innerHTML =
-                '<div class="modal-stat"><div class="l">Tanggal Transaksi</div><div class="v">' + esc(row.tanggal || '—') + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Tanggal Transaksi</div><div class="v">' + esc(tglTransaksiFull || '—') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Jatuh Tempo</div><div class="v">' + esc(row.jatuhTempoStr || '—') + '</div></div>' +
                 (dateAnomaly ? '<div class="modal-stat"><div class="l">Seharusnya Jatuh Tempo</div><div class="v" style="color:var(--red)">' + esc(expectedDueStr) + '</div></div>' : '') +
                 '<div class="modal-stat"><div class="l">Tagihan</div><div class="v">' + fmt(nominal) + '</div></div>' +
@@ -3170,6 +3184,10 @@
             cekSub = sub;
             document.getElementById('cekSubCash').classList.toggle('active', sub === 'cash');
             document.getElementById('cekSubTempo').classList.toggle('active', sub === 'tempo');
+            document.getElementById('cekSubAnomali').classList.toggle('active', sub === 'anomali');
+            document.querySelectorAll('.cek-recon-card').forEach(el => {
+                el.style.display = (sub === 'anomali') ? 'none' : '';
+            });
             populateCekStatusOptions(sub);
             const bl = document.getElementById('cekFilterBulan');
             const multiWrap = document.getElementById('cekBulanMultiWrap');
@@ -3183,6 +3201,15 @@
                 cekSelectedBulanMulti = activeTempoMonth ? [activeTempoMonth] : ['all'];
                 cekBulanUserSet = false;
                 updateCekBulanMultiLabel();
+            } else if (sub === 'anomali') {
+                if (bl) {
+                    bl.style.display = '';
+                    const anomaliMonths = [...new Set((salesRows || []).map(r => r.month).filter(Boolean))];
+                    bl.value = preferredMonth(anomaliMonths) || 'all';
+                }
+                if (multiWrap) multiWrap.style.display = 'none';
+                if (hint) hint.style.display = 'none';
+                closeCekBulanPanel();
             } else {
                 if (bl) {
                     bl.style.display = '';
@@ -3264,6 +3291,10 @@
                     '<option value="overdue">Sudah Jatuh Tempo</option>' +
                     '<option value="titip">Titip / Sebagian</option>' +
                     '<option value="not_in_sales">⚠ Tidak Ada di Data Penjualan</option>';
+            } else if (sub === 'anomali') {
+                sel.innerHTML = '<option value="all">Semua Tipe</option>' +
+                    '<option value="anomali_cash">💵 Cash</option>' +
+                    '<option value="anomali_tempo">📅 Tempo</option>';
             } else {
                 sel.innerHTML = '<option value="all">Semua Status</option>' +
                     '<option value="lunas">Lunas</option>' +
@@ -3482,6 +3513,67 @@
             const salesMap = rebuildSalesFakturMap();
             const today = new Date();
             const out = [];
+            if (payType === 'ANOMALI') {
+                // Kumpulkan semua No.Faktur yang ADA di Data Uang Masuk (semua section),
+                // supaya "ada di Uang Masuk" berarti benar-benar ada di mana saja di file itu.
+                const umFakturSet = new Set();
+                for (const r of allRows) {
+                    const fk = String(r.faktur || '').trim();
+                    if (fk) umFakturSet.add(fk);
+                }
+                // Kelompokkan Data Penjualan per No.Faktur (SEMUA tipe pembayaran, Cash maupun Tempo)
+                const byFaktur = new Map();
+                for (const r of salesRows) {
+                    const fk = String(r.noFaktur || '').trim();
+                    if (!fk) continue;
+                    const pay = String(r.pembayaran || '').trim().toUpperCase();
+                    const isCash = pay === 'CASH' || pay.startsWith('CASH') || pay === 'TUNAI';
+                    if (!byFaktur.has(fk)) {
+                        const td = parseSalesDate(r.tanggal);
+                        byFaktur.set(fk, {
+                            noFaktur: fk,
+                            tanggal: r.tanggal || '',
+                            tglDate: td,
+                            sales: r.sales || '',
+                            customer: r.customer || '',
+                            alamat: r.alamat || '',
+                            nominal: 0,
+                            items: 0,
+                            month: r.month || monthNameFromDate(td) || 'Lainnya',
+                            tipeBayar: isCash ? 'Cash' : 'Tempo',
+                            fromSales: true
+                        });
+                    }
+                    const g = byFaktur.get(fk);
+                    g.nominal += Number(r.total) || 0;
+                    g.items += 1;
+                    const td = parseSalesDate(r.tanggal);
+                    if (td && (!g.tglDate || td < g.tglDate)) {
+                        g.tglDate = td;
+                        g.tanggal = r.tanggal || g.tanggal;
+                        g.month = r.month || monthNameFromDate(td) || g.month;
+                    }
+                    if (!g.customer && r.customer) g.customer = r.customer;
+                    if (!g.sales && r.sales) g.sales = r.sales;
+                    if (!g.alamat && r.alamat) g.alamat = r.alamat;
+                }
+                // Anomali = faktur di Data Penjualan yang TIDAK ditemukan sama sekali
+                // (No.Faktur exact) di Data Uang Masuk.
+                for (const g of byFaktur.values()) {
+                    if (umFakturSet.has(g.noFaktur)) continue;
+                    g.statusCek = 'Anomali';
+                    g.pembayaran = g.tipeBayar;
+                    out.push(g);
+                }
+                out.sort((a, b) => {
+                    const ta = a.tglDate ? a.tglDate.getTime() : 0;
+                    const tb = b.tglDate ? b.tglDate.getTime() : 0;
+                    return tb - ta;
+                });
+                cekFakturCache[cacheKey] = out;
+                cekFakturCacheDirty[cacheKey] = false;
+                return out;
+            }
             if (payType === 'CASH') {
                 const byFaktur = new Map();
                 for (const r of allRows) {
@@ -3740,6 +3832,21 @@
             document.getElementById('cekTbody'),
             function(r) {
                 const isTempo = cekSub === 'tempo';
+                const isAnomali = cekSub === 'anomali';
+                if (isAnomali) {
+                    const tipeColor = r.tipeBayar === 'Cash' ? 'var(--green, #16a34a)' : 'var(--blue, #2563eb)';
+                    return '<tr>' +
+                        '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
+                        '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
+                        '<td class="toko">' + esc(r.customer) + '</td>' +
+                        '<td>' + esc(r.sales) + '</td>' +
+                        '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
+                        '<td><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:0.7rem;font-weight:700;color:#fff;background:' + tipeColor + ';">' +
+                            (r.tipeBayar === 'Cash' ? '💵 CASH' : '📅 TEMPO') + '</span></td>' +
+                        '<td class="num">' + r.items + '</td>' +
+                        '<td class="muted">' + esc(r.alamat) + '</td>' +
+                        '</tr>';
+                }
                 if (isTempo) {
                     return '<tr>' +
                         '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
@@ -3986,7 +4093,8 @@
 
         async function renderCekTable() {
             const isTempo = cekSub === 'tempo';
-            const payType = isTempo ? 'TEMPO' : 'CASH';
+            const isAnomali = cekSub === 'anomali';
+            const payType = isTempo ? 'TEMPO' : (isAnomali ? 'ANOMALI' : 'CASH');
             // Invalidate cache jika ada perubahan data (allRows/salesRows) – kita set dirty flag di handleFiles
             let rows = await buildCekFakturList(payType);
             populateCekFilterBulan(rows);
@@ -3998,7 +4106,7 @@
                 rows = await chunkedFilter(rows, r => flexibleSearchMatch(q, [
                     r.noFaktur, r.customer, r.toko, r.namaToko, r.sales, r.alamat,
                     r.pembayaran, r.statusCek, r.status, r.tanggal, r.tglDate, r.month,
-                    r.jatuhTempoStr
+                    r.jatuhTempoStr, r.tipeBayar
                 ], r, 'cek'));
                 setSearchBusy('cekSearchBtn', false);
             }
@@ -4025,6 +4133,8 @@
                     if (stFilter === 'titip') return r.statusCek === 'Titip';
                     if (stFilter === 'belum_bayar') return r.statusCek === 'Cash';
                     if (stFilter === 'not_in_sales') return r.fromSales === false;
+                    if (stFilter === 'anomali_cash') return r.tipeBayar === 'Cash';
+                    if (stFilter === 'anomali_tempo') return r.tipeBayar === 'Tempo';
                     return true;
                 });
             }
@@ -4038,7 +4148,7 @@
             document.getElementById('cekCardLunas').textContent = nomLunas.toLocaleString('id-ID');
             document.getElementById('cekCardTitip').textContent = nomTitip.toLocaleString('id-ID');
             // Crosscheck bukan lagi Nominal Lunas + Titip. Hitung uang masuk berdasarkan tanggal uang masuk.
-            updateCekReconciliationCards(bulanList);
+            if (!isAnomali) updateCekReconciliationCards(bulanList);
 
             if (isTempo) {
                 const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
@@ -4051,6 +4161,17 @@
                 document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
                 document.getElementById('cekCard3').textContent = nOd.toLocaleString('id-ID');
                 document.getElementById('cekCard4').textContent = nomOd.toLocaleString('id-ID');
+            } else if (isAnomali) {
+                const nCash = rows.filter(r => r.tipeBayar === 'Cash').length;
+                const nTempo = rows.filter(r => r.tipeBayar === 'Tempo').length;
+                document.getElementById('cekCard1Label').textContent = 'Jml Faktur Anomali';
+                document.getElementById('cekCard2Label').textContent = 'Nominal Anomali';
+                document.getElementById('cekCard3Label').textContent = '💵 Anomali Cash';
+                document.getElementById('cekCard4Label').textContent = '📅 Anomali Tempo';
+                document.getElementById('cekCard1').textContent = nFaktur.toLocaleString('id-ID');
+                document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
+                document.getElementById('cekCard3').textContent = nCash.toLocaleString('id-ID');
+                document.getElementById('cekCard4').textContent = nTempo.toLocaleString('id-ID');
             } else {
                 document.getElementById('cekCard1Label').textContent = 'Jml Faktur Dropping';
                 document.getElementById('cekCard2Label').textContent = 'Nominal Dropping';
@@ -4078,7 +4199,14 @@
                 info.textContent = '';
                 return;
             }
-            if (!isTempo && !hasUM) {
+            if (isAnomali && !hasSales) {
+                wrap.style.display = 'none';
+                empty.style.display = 'block';
+                info.innerHTML =
+                    'Belum ada <strong>Data Penjualan</strong>. Upload di tab Data Penjualan agar anomali bisa dideteksi.';
+                return;
+            }
+            if (!isTempo && !isAnomali && !hasUM) {
                 wrap.style.display = 'none';
                 empty.style.display = 'block';
                 info.innerHTML =
@@ -4093,6 +4221,10 @@
                     '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
                     '<th class="num">Nominal</th><th>Jatuh Tempo</th><th>Status</th>' +
                     '<th class="num">Umur Overdue</th><th class="num">Sudah Bayar</th><th>Alamat</th><th>Pembayaran</th></tr>';
+            } else if (isAnomali) {
+                thead.innerHTML = '<tr>' +
+                    '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
+                    '<th class="num">Nominal</th><th>Tipe</th><th class="num">Item</th><th>Alamat</th></tr>';
             } else {
                 thead.innerHTML = '<tr>' +
                     '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
@@ -4105,6 +4237,8 @@
                     msg = 'Tidak ada faktur Tempo yang cocok.<br><span style="font-size:0.8rem">Semua faktur di Data Penjualan mungkin bertipe <b>Cash</b>, atau filter bulan/status terlalu ketat. Coba pilih <b>Semua Bulan</b> + <b>Semua Status</b>.</span>';
                 } else if (isTempo && !hasSales) {
                     msg = 'Belum ada Data Penjualan. Upload di tab <b>Data Penjualan</b> atau pastikan file Uang Masuk punya bagian <b>Piutang Tempo</b>.';
+                } else if (isAnomali) {
+                    msg = '✅ Tidak ada anomali.<br><span style="font-size:0.8rem">Semua faktur di Data Penjualan (sesuai filter) sudah ditemukan pasangannya di Data Uang Masuk.</span>';
                 }
                 tbody.innerHTML =
                     '<tr><td colspan="11" style="text-align:center;padding:28px;color:var(--muted)">' + msg + '</td></tr>';
@@ -4115,6 +4249,7 @@
             cekVirtual.setData(rows);
             info.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') + '</strong> faktur · ' +
                 (isTempo ? ('Tempo / Piutang · jatuh tempo ' + CEK_TEMPO_DAYS + ' hari setelah transaksi') :
+                    isAnomali ? 'Ada di Data Penjualan, tidak ditemukan di Data Uang Masuk (belum bayar / belum tercatat)' :
                     'Faktur Dropping dari Uang Masuk (penjualan cash)');
         }
 
@@ -4122,7 +4257,7 @@
             document.getElementById('cekSearchInput').value = '';
             document.getElementById('cekFilterStatus').value = 'all';
             const bl = document.getElementById('cekFilterBulan');
-            const cekMonths = [...new Set((cekSub === 'tempo' ? (salesRows || []) : (allRows || [])).map(r => r.month).filter(Boolean))];
+            const cekMonths = [...new Set(((cekSub === 'tempo' || cekSub === 'anomali') ? (salesRows || []) : (allRows || [])).map(r => r.month).filter(Boolean))];
             const activeCekMonth = preferredMonth(cekMonths);
             if (bl) bl.value = activeCekMonth || 'all';
             cekSelectedBulanMulti = activeCekMonth ? [activeCekMonth] : ['all'];
@@ -4139,7 +4274,9 @@
 
         async function downloadCekExcel(scope) {
             const isTempo = cekSub === 'tempo';
-            const rows = (scope === 'all') ? await buildCekFakturList(isTempo ? 'TEMPO' : 'CASH') : lastCekRows;
+            const isAnomali = cekSub === 'anomali';
+            const payType = isTempo ? 'TEMPO' : (isAnomali ? 'ANOMALI' : 'CASH');
+            const rows = (scope === 'all') ? await buildCekFakturList(payType) : lastCekRows;
             if (!rows.length) { alert('Tidak ada data untuk diunduh.'); return; }
             const aoa = [];
             if (isTempo) {
@@ -4153,6 +4290,16 @@
                         r.jatuhTempoStr, st,
                         r.isOverdue ? r.umurOverdue : '',
                         r.paidAmount || 0, r.alamat || '', r.pembayaran || 'Tempo'
+                    ]);
+                });
+            } else if (isAnomali) {
+                aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Tipe (Cash/Tempo)', 'Jml Item',
+                    'Alamat'
+                ]);
+                rows.forEach(r => {
+                    aoa.push([
+                        r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
+                        r.tipeBayar || '', r.items, r.alamat || ''
                     ]);
                 });
             } else {
