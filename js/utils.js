@@ -289,20 +289,45 @@ export function cekTextSimilar(a, b) {
 }
 
 /**
- * Skor kecocokan nominal pembayaran vs tagihan (0-4) untuk fuzzy matching
- * di tab Cek Data. Semakin tinggi skor semakin yakin cocok.
+ * Skor kecocokan nominal pembayaran vs tagihan (0-7) untuk fuzzy matching
+ * di tab Cek Data. Dipakai bersama oleh tabel Cek Data Tempo maupun
+ * rekonsiliasi Uang Masuk, supaya keduanya selalu sepakat. Skor bertingkat:
+ * - 7 = nominal sama persis (toleransi Rp1)
+ * - 5 = pembayaran cicilan wajar (45%-99% dari tagihan)
+ * - 4 = mendekati sama (selisih kecil, dalam toleransi ~3%)
+ * - 0 = tidak ada kecocokan nominal yang meyakinkan
  * @param {number} paid Jumlah yang dibayar.
  * @param {number} nominal Nominal tagihan.
- * @returns {number} 0-4.
+ * @returns {number} 0, 4, 5, atau 7.
  */
 export function cekAmountScore(paid, nominal) {
     paid = Number(paid) || 0;
     nominal = Number(nominal) || 0;
     if (!paid || !nominal) return 0;
     const diff = Math.abs(paid - nominal);
-    if (diff <= 1) return 4;
-    if (diff <= Math.max(1000, nominal * 0.03)) return 3;
-    if (paid < nominal && paid >= nominal * 0.45) return 2;
+    if (diff <= 1) return 7;
+    if (paid < nominal && paid >= nominal * 0.45) return 5;
+    if (diff <= Math.max(1000, nominal * 0.03)) return 4;
+    return 0;
+}
+
+/**
+ * Skor kemiripan dua No.Faktur berdasarkan kecocokan digit (0-8), dipakai
+ * sebagai penguat kecil saat fuzzy matching (mis. kesalahan ketik 1-2 digit).
+ * Dipakai bersama oleh tabel Cek Data Tempo & rekonsiliasi Uang Masuk.
+ * @param {*} a
+ * @param {*} b
+ * @returns {number} 0, 1, 3, atau 8.
+ */
+export function cekFakturSimilarity(a, b) {
+    a = String(a || '').replace(/\D/g, '');
+    b = String(b || '').replace(/\D/g, '');
+    if (!a || !b || a.length !== b.length) return 0;
+    let same = 0;
+    for (let i = 0; i < a.length; i++) if (a[i] === b[i]) same++;
+    if (same === a.length) return 8;
+    if (same >= Math.max(4, a.length - 1)) return 3;
+    if (same >= Math.max(4, a.length - 2)) return 1;
     return 0;
 }
 
