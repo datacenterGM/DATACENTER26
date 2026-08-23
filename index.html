@@ -502,7 +502,7 @@
                 <select id="filterMonth"><option value="all">Semua Bulan</option></select>
                 <select id="filterSection"><option value="all">Semua Bagian</option><option value="PIUTANG TEMPO">Piutang Tempo</option><option value="CASH DROPPING">Cash Dropping</option></select>
                 <select id="filterStatus"><option value="all">Semua Status</option><option value="LUNAS">Lunas</option><option value="TITIP">Titip</option></select>
-                <button class="btn" onclick="doSearch()">Cari</button>
+                <button class="btn" id="searchBtn" onclick="doSearch()">Cari</button>
                 <button class="btn btn-outline" onclick="resetSearch()">Reset</button>
                 <button class="btn btn-outline" onclick="downloadFakturExcel('filter')">⬇ Filter</button>
                 <button class="btn btn-outline" onclick="downloadFakturExcel('all')">⬇ Semua</button>
@@ -544,7 +544,7 @@
                 <select id="filterSalesMonth"><option value="all">Semua Bulan</option></select>
                 <select id="filterSalesPembayaran"><option value="all">Semua Pembayaran</option><option value="Cash">Cash</option><option value="Tempo">Tempo</option></select>
                 <select id="filterSalesSales"><option value="all">Semua Sales</option><option value="GC">GC</option><option value="HAFID">HAFID</option><option value="JOSSY">JOSSY</option><option value="PARIMIN">PARIMIN</option><option value="RAJU">RAJU</option></select>
-                <button class="btn" onclick="doSalesSearch()">Cari</button>
+                <button class="btn" id="salesSearchBtn" onclick="doSalesSearch()">Cari</button>
                 <button class="btn btn-outline" onclick="resetSalesSearch()">Reset</button>
                 <div class="menu-wrap" id="salesMenuWrap">
                     <button class="theme-btn" id="salesSettingsBtn" onclick="toggleSalesMenu()" title="Pengaturan Data Penjualan">⚙️</button>
@@ -643,7 +643,7 @@
                     </div>
                 </div>
                 <select id="cekFilterStatus"><option value="all">Semua Status</option></select>
-                <button class="btn" onclick="renderCekTable()">Cari</button>
+                <button class="btn" id="cekSearchBtn" onclick="renderCekTable()">Cari</button>
                 <button class="btn btn-outline" onclick="resetCekSearch()">Reset</button>
             </div>
             <div id="cekBulanHint" style="display:none;margin:-6px 0 8px;color:var(--muted);font-size:0.75rem;">
@@ -809,7 +809,7 @@
             addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
             currentMonthName, preferredMonth, detectMonth, statusBadge,
             sectionBadge, statusBadgeCek, normalizeSearchText, flexibleSearchMatch,
-            normCekText, cekTextSimilar, cekAmountScore
+            normCekText, cekTextSimilar, cekAmountScore, chunkedFilter
         } from './js/utils.js';
         import {
             DB_NAME, DB_VERSION, DB_STORE, DB_KEY, DB_KEY_SALES, DB_KEY_RAPIKAN,
@@ -852,6 +852,22 @@
         //  addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
         //  currentMonthName, preferredMonth, detectMonth, statusBadge,
         //  sectionBadge, statusBadgeCek -> dipindah ke js/utils.js, lihat import di atas)
+
+        // ---- Indikator "Mencari..." untuk pencarian teks di dataset besar ----
+        // (dipakai doSearch / doSalesSearch / renderCekTable saat memproses
+        //  chunkedFilter, supaya user tahu ada proses jalan, bukan macet)
+        function setSearchBusy(btnId, busy) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            if (busy) {
+                if (!btn.dataset.origText) btn.dataset.origText = btn.textContent;
+                btn.textContent = 'Mencari…';
+                btn.disabled = true;
+            } else {
+                if (btn.dataset.origText) btn.textContent = btn.dataset.origText;
+                btn.disabled = false;
+            }
+        }
 
         // ---- Virtual table (optimized) ----
         function createVirtualTable(wrapEl, tbodyEl, rowHtmlFn, options) {
@@ -1696,7 +1712,7 @@
         // (normalizeSearchText, flexibleSearchMatch -> dipindah ke js/utils.js)
 
         // ---- Search/filter Uang Masuk ----
-        function doSearch() {
+        async function doSearch() {
             const q = document.getElementById('searchInput').value.trim().toLowerCase();
             const mon = document.getElementById('filterMonth').value;
             const sec = document.getElementById('filterSection').value;
@@ -1708,11 +1724,13 @@
             updateCards(filtered);
             buildDailySummary(filtered);
             if (q) {
-                filtered = filtered.filter(r => flexibleSearchMatch(q, [
+                setSearchBusy('searchBtn', true);
+                filtered = await chunkedFilter(filtered, r => flexibleSearchMatch(q, [
                     r.faktur, r.toko, r.namaToko, r.customer, r.alamat, r.sales,
                     r.sheet, r.section, r.status, r.date, r.tanggal, r.month,
                     r.ket, r.keterangan
-                ]));
+                ], r, 'faktur'));
+                setSearchBusy('searchBtn', false);
             }
             renderTable(filtered);
         }
@@ -1972,6 +1990,7 @@
         // ---- Clear data ----
         function clearData() {
             allRows = [];
+            lastFakturFiltered = [];
             invalidateFakturIndex();
             saveRowsToDBAndSync([], DB_KEY);
             queueCloudSync();
@@ -2517,12 +2536,12 @@
                 filtered = filtered.filter(r => flexibleSearchMatch(q, [
                     r.noFaktur, r.produk, r.customer, r.toko, r.namaToko, r.sales,
                     r.alamat, r.pembayaran, r.Tanggal, r.tanggal, r.month
-                ]));
+                ], r, 'sales'));
             }
             return filtered;
         }
 
-        function doSalesSearch() {
+        async function doSalesSearch() {
             const q = document.getElementById('salesSearchInput').value.trim().toLowerCase();
             const mon = document.getElementById('filterSalesMonth').value;
             const pay = document.getElementById('filterSalesPembayaran').value;
@@ -2532,10 +2551,12 @@
             if (pay !== 'all') filtered = filtered.filter(r => r.pembayaran === pay);
             if (sls !== 'all') filtered = filtered.filter(r => r.sales === sls);
             if (q) {
-                filtered = filtered.filter(r => flexibleSearchMatch(q, [
+                setSearchBusy('salesSearchBtn', true);
+                filtered = await chunkedFilter(filtered, r => flexibleSearchMatch(q, [
                     r.noFaktur, r.produk, r.customer, r.toko, r.namaToko, r.sales,
                     r.alamat, r.pembayaran, r.Tanggal, r.tanggal, r.month
-                ]));
+                ], r, 'sales'));
+                setSearchBusy('salesSearchBtn', false);
             }
             lastSalesFiltered = filtered;
             renderSalesTable(filtered);
@@ -3826,7 +3847,7 @@
             return rec;
         }
 
-        function renderCekTable() {
+        async function renderCekTable() {
             const isTempo = cekSub === 'tempo';
             const payType = isTempo ? 'TEMPO' : 'CASH';
             // Invalidate cache jika ada perubahan data (allRows/salesRows) – kita set dirty flag di handleFiles
@@ -3836,11 +3857,13 @@
             const stFilter = (document.getElementById('cekFilterStatus').value || 'all');
             const bulanList = getCekSelectedBulan();
             if (q) {
-                rows = rows.filter(r => flexibleSearchMatch(q, [
+                setSearchBusy('cekSearchBtn', true);
+                rows = await chunkedFilter(rows, r => flexibleSearchMatch(q, [
                     r.noFaktur, r.customer, r.toko, r.namaToko, r.sales, r.alamat,
                     r.pembayaran, r.statusCek, r.status, r.tanggal, r.tglDate, r.month,
                     r.jatuhTempoStr
-                ]));
+                ], r, 'cek'));
+                setSearchBusy('cekSearchBtn', false);
             }
             if (!bulanList.includes('all')) {
                 const setBulan = new Set(bulanList);
