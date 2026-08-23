@@ -831,7 +831,7 @@
             addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
             currentMonthName, preferredMonth, detectMonth, statusBadge,
             sectionBadge, statusBadgeCek, normalizeSearchText, flexibleSearchMatch,
-            normCekText, cekTextSimilar, cekAmountScore, chunkedFilter
+            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, chunkedFilter, yieldToMain
         } from './js/utils.js';
         import {
             DB_NAME, DB_VERSION, DB_STORE, DB_KEY, DB_KEY_SALES, DB_KEY_RAPIKAN,
@@ -3262,10 +3262,58 @@
 
         // ---- Cek cache ----
         // (normCekText, cekTextSimilar, cekAmountScore -> dipindah ke js/utils.js)
-        function findCekFuzzyPayment(g, umByFaktur, usedKeys) {
+
+        // Index kata (token) dari toko/alamat/salesName di umByFaktur, dipakai
+        // findCekFuzzyPayment supaya tidak perlu scan semua entri Uang Masuk
+        // untuk tiap faktur yang belum matched. Dibangun sekali per build
+        // (bukan per faktur), jadi biayanya O(M) sekali, bukan O(N x M).
+        function buildCekFuzzyTokenIndex(umByFaktur) {
+            const index = new Map(); // token -> Set<fakturKey>
+            for (const [fk, u] of umByFaktur.entries()) {
+                if (!u) continue;
+                const tokens = new Set([
+                    ...normCekTokens(u.toko),
+                    ...normCekTokens(u.alamat),
+                    ...normCekTokens(u.salesName)
+                ]);
+                for (const t of tokens) {
+                    let set = index.get(t);
+                    if (!set) { set = new Set(); index.set(t, set); }
+                    set.add(fk);
+                }
+            }
+            return index;
+        }
+
+        // umTokenIndex opsional: kalau ada, kandidat dipersempit ke entri yang
+        // minimal berbagi satu kata dengan customer/alamat/sales dari g,
+        // supaya tidak perlu scan seluruh umByFaktur. Kalau kandidat dari
+        // index kosong (mis. teks nyambung tanpa spasi), fallback ke scan
+        // penuh untuk faktur itu saja, supaya tidak ada match yang hilang.
+        function findCekFuzzyPayment(g, umByFaktur, usedKeys, umTokenIndex) {
             let best = null, bestScore = 0;
             const gDate = g.tglDate instanceof Date && !isNaN(g.tglDate) ? g.tglDate : null;
-            for (const [fk, u] of umByFaktur.entries()) {
+
+            let candidateKeys = null;
+            if (umTokenIndex) {
+                const gTokens = new Set([
+                    ...normCekTokens(g.customer),
+                    ...normCekTokens(g.alamat),
+                    ...normCekTokens(g.sales)
+                ]);
+                const merged = new Set();
+                for (const t of gTokens) {
+                    const set = umTokenIndex.get(t);
+                    if (set) for (const fk of set) merged.add(fk);
+                }
+                if (merged.size) candidateKeys = merged;
+                // Kalau merged kosong, candidateKeys tetap null -> fallback full scan.
+            }
+            const entries = candidateKeys
+                ? Array.from(candidateKeys, fk => [fk, umByFaktur.get(fk)])
+                : umByFaktur.entries();
+
+            for (const [fk, u] of entries) {
                 if (usedKeys.has(fk) || !u) continue;
                 const paymentAmount = Number(u.paidAmount) || 0;
                 const referenceAmount = Number(g.nominal) || Number(u.tagihanUM) || 0;
@@ -3375,7 +3423,7 @@
             return row;
         }
 
-        function buildCekFakturList(payType) {
+        async function buildCekFakturList(payType) {
             const cacheKey = payType.toLowerCase();
             // Gunakan cache jika masih valid (per tipe cash/tempo, masing-masing independen)
             if (!cekFakturCacheDirty[cacheKey]) {
@@ -3533,16 +3581,25 @@
                     });
                 }
 
+                // Index kata dibangun sekali (O(M)) sebelum loop, dipakai findCekFuzzyPayment
+                // untuk mempersempit kandidat per faktur (lihat buildCekFuzzyTokenIndex).
+                const umTokenIndex = buildCekFuzzyTokenIndex(umByFaktur);
                 const fuzzyUsed = new Set();
                 const resolvedUM = new Map();
+                let fuzzyProcessed = 0;
                 for (const g of byFaktur.values()) {
                     const exact = umByFaktur.get(g.noFaktur);
                     if (exact) { resolvedUM.set(g.noFaktur, exact); fuzzyUsed.add(g.noFaktur); continue; }
-                    const hit = findCekFuzzyPayment(g, umByFaktur, fuzzyUsed);
+                    const hit = findCekFuzzyPayment(g, umByFaktur, fuzzyUsed, umTokenIndex);
                     if (hit) {
                         resolvedUM.set(g.noFaktur, hit.data); fuzzyUsed.add(hit.key);
                         g.paymentMatch = 'FUZZY'; g.paymentMatchFaktur = hit.key; g.paymentMatchScore = hit.score; g.paymentMatchInfo = hit.match || {};
                     }
+                    // Non-blocking: hanya faktur yang belum matched exact yang masuk sini
+                    // (biasanya jauh lebih sedikit dari total), tapi tiap satu tetap bisa
+                    // mahal (fuzzy text match). Kasih jeda ke UI tiap 40 faktur diproses.
+                    fuzzyProcessed++;
+                    if (fuzzyProcessed % 40 === 0) await yieldToMain();
                 }
                 for (const g of byFaktur.values()) {
                     const u = resolvedUM.get(g.noFaktur);
@@ -3873,7 +3930,7 @@
             const isTempo = cekSub === 'tempo';
             const payType = isTempo ? 'TEMPO' : 'CASH';
             // Invalidate cache jika ada perubahan data (allRows/salesRows) – kita set dirty flag di handleFiles
-            let rows = buildCekFakturList(payType);
+            let rows = await buildCekFakturList(payType);
             populateCekFilterBulan(rows);
             const q = (document.getElementById('cekSearchInput').value || '').trim().toLowerCase();
             const stFilter = (document.getElementById('cekFilterStatus').value || 'all');
@@ -4022,9 +4079,9 @@
             renderCekTable();
         }
 
-        function downloadCekExcel(scope) {
+        async function downloadCekExcel(scope) {
             const isTempo = cekSub === 'tempo';
-            const rows = (scope === 'all') ? buildCekFakturList(isTempo ? 'TEMPO' : 'CASH') : lastCekRows;
+            const rows = (scope === 'all') ? await buildCekFakturList(isTempo ? 'TEMPO' : 'CASH') : lastCekRows;
             if (!rows.length) { alert('Tidak ada data untuk diunduh.'); return; }
             const aoa = [];
             if (isTempo) {
