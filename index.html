@@ -181,6 +181,9 @@
         .profit-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .profit-table .total-row td { font-weight: 700; border-top: 2px solid var(--border); background: var(--th-bg); }
         .profit-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.78rem; font-weight: 700; }
+        .ringkasan-rupa-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-weight: 400; }
+        .ringkasan-rupa-controls input, .ringkasan-rupa-controls select { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 0.75rem; outline: none; }
+        .ringkasan-rupa-controls input { min-width: 140px; }
 
         .theme-btn { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 1rem; line-height: 1; color: var(--text); min-height: 40px; min-width: 40px; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
 
@@ -620,7 +623,8 @@
             <div class="result-info" id="salesResultInfo" style="display:none;">Menampilkan <strong>0</strong> dari <strong>0</strong> transaksi</div>
 
             <div class="subtabs show" id="salesSubtabs">
-                <button class="subtab-btn active" id="subBtnTransaksi" onclick="switchSalesSub('transaksi')">📋 Transaksi</button>
+                <button class="subtab-btn active" id="subBtnRingkasan" onclick="switchSalesSub('ringkasan')">📊 Ringkasan</button>
+                <button class="subtab-btn" id="subBtnTransaksi" onclick="switchSalesSub('transaksi')">📋 Transaksi</button>
                 <button class="subtab-btn" id="subBtnProduk" onclick="switchSalesSub('produk')">📦 Profit Per Produk</button>
                 <button class="subtab-btn" id="subBtnPay" onclick="switchSalesSub('pay')">💳 Profit Per Produk Per Pembayaran</button>
                 <button class="subtab-btn" id="subBtnSales" onclick="switchSalesSub('sales')">👤 Profit Per Sales</button>
@@ -643,6 +647,37 @@
                 <tbody id="salesTbody"></tbody></table>
             </div>
             <div class="sales-cards-grid" id="salesCardsGrid"></div>
+
+            <!-- RINGKASAN -->
+            <div class="sales-cards" id="ringkasanSalesCards" style="margin-bottom:10px;"></div>
+
+            <div class="profit-wrap show" id="ringkasanLastDayWrap">
+                <div class="profit-head">
+                    <span>📅 PENJUALAN FITRI — HARI TERAKHIR</span>
+                    <span class="muted" id="ringkasanLastDayMeta">—</span>
+                </div>
+                <div id="ringkasanLastDayBody"></div>
+            </div>
+
+            <div class="profit-wrap show" id="ringkasanFitriWrap">
+                <div class="profit-head">
+                    <span>🧴 PENJUALAN FITRI</span>
+                    <span class="muted" id="ringkasanFitriPeriod">—</span>
+                </div>
+                <div id="ringkasanFitriBody"></div>
+            </div>
+
+            <div class="profit-wrap show" id="ringkasanRupaWrap">
+                <div class="profit-head" style="flex-wrap:wrap;gap:8px;">
+                    <span>🧺 RUPA RUPA</span>
+                    <div class="ringkasan-rupa-controls">
+                        <input type="text" id="ringkasanRupaSearch" placeholder="Cari produk...">
+                        <select id="ringkasanRupaProdukSel"><option value="all">— Pilih Produk —</option></select>
+                        <button type="button" class="btn btn-outline" id="ringkasanRupaToggleBtn" style="font-size:0.72rem;padding:5px 10px;display:none;" onclick="toggleRingkasanRupaShowAll()">☰ SEMUA PRODUK</button>
+                    </div>
+                </div>
+                <div id="ringkasanRupaBody"></div>
+            </div>
 
             <div class="profit-wrap" id="profitProdukWrap"><div class="profit-head"><span>PROFIT PENJUALAN / PRODUK</span><span class="muted" id="profitProdukPeriod">—</span></div><table class="profit-table"><thead><tr><th>No</th><th>Produk</th><th class="num">Qty</th><th class="num">Total Penjualan</th><th class="num">Total HPP</th><th class="num">Harga Jual</th><th class="num">Harga Beli</th><th class="num">Profit</th></tr></thead><tbody id="profitProdukBody"></tbody></table></div>
             <div class="profit-wrap" id="profitPayWrap"><div class="profit-head"><span>PROFIT PER PRODUK PER PEMBAYARAN</span><span class="muted" id="profitPayPeriod">—</span></div><table class="profit-table"><thead><tr><th>Produk</th><th class="num">Nominal Penjualan Cash</th><th class="num">Nominal Penjualan Tempo</th><th class="num">Profit Tempo</th><th class="num">Profit Cash</th><th class="num">Total Nominal Penjualan</th><th class="num">Total Profit</th></tr></thead><tbody id="profitPayBody"></tbody></table></div>
@@ -2431,12 +2466,167 @@
 
         // ---- Sales search & render ----
         let lastSalesFiltered = [];
-        let currentSalesSub = 'transaksi';
+        let currentSalesSub = 'ringkasan';
         let lastProfitProdukRows = [];
         let lastProfitPayRows = [];
         let lastProfitSalesRows = [];
         let lastProfitBulanRows = [];
         let fakturNominalMap = {};
+
+        // ---- RINGKASAN (sub-tab pertama di Data Penjualan) ----
+        const RINGKASAN_SALES_ORDER = ['RAJU', 'JOSSY', 'HAFID', 'GC', 'PARIMIN'];
+        let ringkasanRupaRowsCache = [];
+        let ringkasanRupaShowAll = false;
+
+        function isFitriProduk(produk) { return (produk || '').toUpperCase().includes('FITRI'); }
+
+        function sortRingkasanSalesNames(names) {
+            return names.slice().sort((a, b) => {
+                const ia = RINGKASAN_SALES_ORDER.indexOf((a || '').toUpperCase());
+                const ib = RINGKASAN_SALES_ORDER.indexOf((b || '').toUpperCase());
+                const ra = ia === -1 ? 999 : ia;
+                const rb = ib === -1 ? 999 : ib;
+                if (ra !== rb) return ra - rb;
+                return (a || '').localeCompare(b || '');
+            });
+        }
+
+        // Pivot: Produk (baris) x Sales (kolom), nilai = total Jumlah (qty)
+        function buildRingkasanPivot(rows) {
+            const prodMap = {};
+            const salesTotals = {};
+            let grandTotal = 0;
+            for (const r of rows) {
+                const prod = (r.produk || '').trim() || '—';
+                const sls = (r.sales || '').trim() || '—';
+                const qty = Number(r.jumlah) || 0;
+                if (!prodMap[prod]) prodMap[prod] = { __total: 0 };
+                prodMap[prod][sls] = (prodMap[prod][sls] || 0) + qty;
+                prodMap[prod].__total += qty;
+                salesTotals[sls] = (salesTotals[sls] || 0) + qty;
+                grandTotal += qty;
+            }
+            const products = Object.keys(prodMap).sort((a, b) => prodMap[b].__total - prodMap[a].__total);
+            const salesList = sortRingkasanSalesNames(Object.keys(salesTotals));
+            return { prodMap, products, salesList, salesTotals, grandTotal };
+        }
+
+        function renderRingkasanPivotTable(pivot, productSubset) {
+            const products = productSubset || pivot.products;
+            if (!products.length) {
+                return '<div style="text-align:center;padding:24px;color:var(--muted)">Tidak ada data.</div>';
+            }
+            const thead = '<tr><th>PRODUK</th>' +
+                pivot.salesList.map(s => '<th class="num">' + esc(s) + '</th>').join('') +
+                '<th class="num">TOTAL</th></tr>';
+            const bodyRows = products.map(p => {
+                const cells = pivot.salesList.map(s => {
+                    const v = (pivot.prodMap[p] && pivot.prodMap[p][s]) || 0;
+                    return '<td class="num">' + (v ? v.toLocaleString('id-ID') : '—') + '</td>';
+                }).join('');
+                const tot = (pivot.prodMap[p] && pivot.prodMap[p].__total) || 0;
+                return '<tr><td>' + esc(p) + '</td>' + cells + '<td class="num"><strong>' + tot.toLocaleString('id-ID') +
+                    '</strong></td></tr>';
+            }).join('');
+            const totalCells = pivot.salesList.map(s => '<td class="num">' + (pivot.salesTotals[s] || 0).toLocaleString(
+                'id-ID') + '</td>').join('');
+            const totalRow = '<tr class="total-row"><td>TOTAL</td>' + totalCells + '<td class="num">' + pivot.grandTotal
+                .toLocaleString('id-ID') + '</td></tr>';
+            return '<table class="profit-table"><thead>' + thead + '</thead><tbody>' + bodyRows + totalRow +
+                '</tbody></table>';
+        }
+
+        function renderRingkasanCards(pivotFitri) {
+            const el = document.getElementById('ringkasanSalesCards');
+            if (!el) return;
+            if (!pivotFitri.salesList.length) { el.classList.remove('show'); el.innerHTML = ''; return; }
+            el.classList.add('show');
+            let html = pivotFitri.salesList.map(s => {
+                const v = pivotFitri.salesTotals[s] || 0;
+                return '<div class="scard accent-fitri"><div class="sc-label">' + esc(s) +
+                    '</div><div class="sc-value" style="font-size:1.25rem">' + v.toLocaleString('id-ID') +
+                    '</div><div class="sc-label" style="margin-top:2px;text-transform:none;font-weight:400">Penjualan Fitri</div></div>';
+            }).join('');
+            html += '<div class="scard accent-total"><div class="sc-label">TOTAL</div><div class="sc-value" style="font-size:1.25rem">' +
+                pivotFitri.grandTotal.toLocaleString('id-ID') +
+                '</div><div class="sc-label" style="margin-top:2px;text-transform:none;font-weight:400">Penjualan Fitri</div></div>';
+            el.innerHTML = html;
+        }
+
+        function renderRingkasanLastDay(fitriRows) {
+            const metaEl = document.getElementById('ringkasanLastDayMeta');
+            const bodyEl = document.getElementById('ringkasanLastDayBody');
+            if (!fitriRows.length) {
+                if (metaEl) metaEl.textContent = '—';
+                if (bodyEl) bodyEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted)">Tidak ada data.</div>';
+                return;
+            }
+            let maxDate = null,
+                maxLabel = '';
+            for (const r of fitriRows) {
+                const d = parseSalesDate(r.tanggal);
+                if (d && (!maxDate || d > maxDate)) { maxDate = d; maxLabel = r.tanggal; }
+            }
+            const lastRows = maxDate ? fitriRows.filter(r => {
+                const d = parseSalesDate(r.tanggal);
+                return d && d.getTime() === maxDate.getTime();
+            }) : fitriRows;
+            const pivot = buildRingkasanPivot(lastRows);
+            if (bodyEl) bodyEl.innerHTML = renderRingkasanPivotTable(pivot);
+            if (metaEl) metaEl.textContent = 'Tanggal: ' + (maxLabel || '—') + ' · Total: ' + pivot.grandTotal
+                .toLocaleString('id-ID');
+        }
+
+        function populateRingkasanRupaFilter(rupaRows) {
+            const sel = document.getElementById('ringkasanRupaProdukSel');
+            if (!sel) return;
+            const cur = sel.value;
+            const names = [...new Set(rupaRows.map(r => (r.produk || '').trim()).filter(Boolean))].sort();
+            sel.innerHTML = '<option value="all">— Pilih Produk —</option>' +
+                names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
+            if (names.includes(cur)) sel.value = cur;
+        }
+
+        function renderRingkasanRupa(rupaRows) {
+            if (rupaRows) ringkasanRupaRowsCache = rupaRows;
+            const rows = ringkasanRupaRowsCache;
+            const qInput = document.getElementById('ringkasanRupaSearch');
+            const sel = document.getElementById('ringkasanRupaProdukSel');
+            const q = qInput ? qInput.value.trim().toLowerCase() : '';
+            const selVal = sel ? sel.value : 'all';
+            let filtered = rows;
+            if (selVal && selVal !== 'all') filtered = filtered.filter(r => (r.produk || '').trim() === selVal);
+            if (q) filtered = filtered.filter(r => (r.produk || '').toLowerCase().includes(q));
+            const pivot = buildRingkasanPivot(filtered);
+            const LIMIT = 8;
+            const shown = ringkasanRupaShowAll ? pivot.products : pivot.products.slice(0, LIMIT);
+            const bodyEl = document.getElementById('ringkasanRupaBody');
+            if (bodyEl) bodyEl.innerHTML = renderRingkasanPivotTable(pivot, shown);
+            const toggleBtn = document.getElementById('ringkasanRupaToggleBtn');
+            if (toggleBtn) {
+                toggleBtn.style.display = pivot.products.length > LIMIT ? 'inline-flex' : 'none';
+                toggleBtn.textContent = ringkasanRupaShowAll ? '☰ RINGKAS' : '☰ SEMUA PRODUK';
+            }
+        }
+
+        function toggleRingkasanRupaShowAll() {
+            ringkasanRupaShowAll = !ringkasanRupaShowAll;
+            renderRingkasanRupa();
+        }
+
+        function renderRingkasan(rows) {
+            const fitriRows = rows.filter(r => isFitriProduk(r.produk));
+            const rupaRows = rows.filter(r => !isFitriProduk(r.produk));
+            const pivotFitriFull = buildRingkasanPivot(fitriRows);
+            renderRingkasanCards(pivotFitriFull);
+            renderRingkasanLastDay(fitriRows);
+            const fitriBody = document.getElementById('ringkasanFitriBody');
+            if (fitriBody) fitriBody.innerHTML = renderRingkasanPivotTable(pivotFitriFull);
+            const fitriPeriod = document.getElementById('ringkasanFitriPeriod');
+            if (fitriPeriod) fitriPeriod.textContent = getSalesPeriodLabel();
+            populateRingkasanRupaFilter(rupaRows);
+            renderRingkasanRupa(rupaRows);
+        }
 
         function rebuildFakturNominalMap(rows) {
             const map = {};
@@ -2695,6 +2885,7 @@
             }
             lastSalesFiltered = filtered;
             renderSalesTable(filtered);
+            if (currentSalesSub === 'ringkasan') renderRingkasan(filtered);
             if (currentSalesSub === 'produk') renderProfitProduk(filtered);
             if (currentSalesSub === 'pay') renderProfitPay(filtered);
             if (currentSalesSub === 'sales') renderProfitSales(filtered);
@@ -2710,6 +2901,7 @@
             document.getElementById('filterSalesSales').value = 'all';
             lastSalesFiltered = salesRows;
             renderSalesTable(salesRows);
+            if (currentSalesSub === 'ringkasan') renderRingkasan(salesRows);
             if (currentSalesSub === 'produk') renderProfitProduk(salesRows);
             if (currentSalesSub === 'pay') renderProfitPay(salesRows);
             if (currentSalesSub === 'sales') renderProfitSales(salesRows);
@@ -2718,6 +2910,7 @@
 
         function switchSalesSub(sub) {
             currentSalesSub = sub;
+            document.getElementById('subBtnRingkasan').classList.toggle('active', sub === 'ringkasan');
             document.getElementById('subBtnTransaksi').classList.toggle('active', sub === 'transaksi');
             document.getElementById('subBtnProduk').classList.toggle('active', sub === 'produk');
             document.getElementById('subBtnPay').classList.toggle('active', sub === 'pay');
@@ -2738,12 +2931,18 @@
                 document.getElementById('salesTableWrap').style.display = 'none';
                 if (grid) { grid.classList.remove('show'); grid.innerHTML = ''; }
             }
+            const ringkasanCards = document.getElementById('ringkasanSalesCards');
+            if (sub !== 'ringkasan' && ringkasanCards) ringkasanCards.classList.remove('show');
+            document.getElementById('ringkasanLastDayWrap').classList.toggle('show', sub === 'ringkasan');
+            document.getElementById('ringkasanFitriWrap').classList.toggle('show', sub === 'ringkasan');
+            document.getElementById('ringkasanRupaWrap').classList.toggle('show', sub === 'ringkasan');
             document.getElementById('profitProdukWrap').classList.toggle('show', sub === 'produk');
             document.getElementById('profitPayWrap').classList.toggle('show', sub === 'pay');
             document.getElementById('profitSalesWrap').classList.toggle('show', sub === 'sales');
             document.getElementById('profitBulanWrap').classList.toggle('show', sub === 'bulan');
             const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
             if (sub === 'transaksi') renderSalesTable(rows);
+            if (sub === 'ringkasan') renderRingkasan(rows);
             if (sub === 'produk') renderProfitProduk(rows);
             if (sub === 'pay') renderProfitPay(rows);
             if (sub === 'sales') renderProfitSales(rows);
@@ -3069,7 +3268,25 @@
             const period = isAllTrans ? 'Semua Data' : getSalesPeriodLabel();
             const safePeriod = period.replace(/\s+/g, '_');
             let sheetName, aoa, fileName;
-            if (currentSalesSub === 'produk') {
+            if (currentSalesSub === 'ringkasan') {
+                const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+                const fitriRows = rows.filter(r => isFitriProduk(r.produk));
+                const pivot = buildRingkasanPivot(fitriRows);
+                sheetName = 'Ringkasan Fitri';
+                fileName = 'Ringkasan_Penjualan_Fitri_' + safePeriod + '.xlsx';
+                aoa = [
+                    ['RINGKASAN PENJUALAN FITRI'].concat(pivot.salesList.map(() => '')).concat([period])
+                ];
+                aoa.push(['Produk'].concat(pivot.salesList).concat(['Total']));
+                pivot.products.forEach(p => {
+                    aoa.push([p].concat(pivot.salesList.map(s => (pivot.prodMap[p][s] || 0))).concat([pivot.prodMap[p]
+                        .__total
+                    ]));
+                });
+                aoa.push(['TOTAL'].concat(pivot.salesList.map(s => (pivot.salesTotals[s] || 0))).concat([pivot
+                    .grandTotal
+                ]));
+            } else if (currentSalesSub === 'produk') {
                 if (!lastProfitProdukRows.length) renderProfitProduk(lastSalesFiltered.length ? lastSalesFiltered :
                     salesRows);
                 sheetName = 'Profit Per Produk';
@@ -3236,12 +3453,18 @@
             salesResultInfo.style.display = 'none';
             document.getElementById('salesCards').classList.remove('show');
             document.getElementById('salesSubtabs').classList.remove('show');
+            const ringkasanCardsClr = document.getElementById('ringkasanSalesCards');
+            if (ringkasanCardsClr) ringkasanCardsClr.classList.remove('show');
+            document.getElementById('ringkasanLastDayWrap').classList.remove('show');
+            document.getElementById('ringkasanFitriWrap').classList.remove('show');
+            document.getElementById('ringkasanRupaWrap').classList.remove('show');
             document.getElementById('profitProdukWrap').classList.remove('show');
             document.getElementById('profitPayWrap').classList.remove('show');
             document.getElementById('profitSalesWrap').classList.remove('show');
             document.getElementById('profitBulanWrap').classList.remove('show');
-            currentSalesSub = 'transaksi';
-            document.getElementById('subBtnTransaksi').classList.add('active');
+            currentSalesSub = 'ringkasan';
+            document.getElementById('subBtnRingkasan').classList.add('active');
+            document.getElementById('subBtnTransaksi').classList.remove('active');
             document.getElementById('subBtnProduk').classList.remove('active');
             document.getElementById('subBtnPay').classList.remove('active');
             document.getElementById('subBtnSales').classList.remove('active');
@@ -5323,6 +5546,13 @@
         document.getElementById('filterSalesMonth').addEventListener('change', doSalesSearch);
         document.getElementById('filterSalesPembayaran').addEventListener('change', doSalesSearch);
         document.getElementById('filterSalesSales').addEventListener('change', doSalesSearch);
+        const ringkasanRupaSearchEl = document.getElementById('ringkasanRupaSearch');
+        if (ringkasanRupaSearchEl) {
+            ringkasanRupaSearchEl.addEventListener('input', () => renderRingkasanRupa());
+            ringkasanRupaSearchEl.addEventListener('keydown', e => { if (e.key === 'Enter') renderRingkasanRupa(); });
+        }
+        const ringkasanRupaSelEl = document.getElementById('ringkasanRupaProdukSel');
+        if (ringkasanRupaSelEl) ringkasanRupaSelEl.addEventListener('change', () => renderRingkasanRupa());
 
         // ---- Ekspos ke window ----
         // Karena <script type="module"> tidak lagi membuat fungsi top-level
@@ -5342,7 +5572,7 @@
             switchCekSub, toggleCekBulanPanel, onCekBulanAllChange, onCekBulanItemChange,
             toggleCekDownloadMenu, renderCekTable, resetCekSearch, downloadCekExcel,
             pickBackupFolder, restoreFromBackupFolder, saveBackupJson, setAutoBackupJsonEnabled,
-            installApp
+            installApp, toggleRingkasanRupaShowAll
         });
     </script>
 </body>
