@@ -201,6 +201,15 @@
         }
         #cekSearchBar .cek-bulan-multi-btn { min-width: 110px; }
 
+        /* Samakan ketebalan baris filter di Uang Masuk & Data Penjualan dengan Cek Data */
+        #searchBar, #salesSearchBar { gap: 6px; margin-bottom: 10px; }
+        #searchBar input, #salesSearchBar input,
+        #searchBar select, #salesSearchBar select,
+        #searchBar .btn, #salesSearchBar .btn {
+            min-height: 32px; padding: 5px 9px; font-size: 0.78rem; border-radius: 6px;
+        }
+        #salesSearchBar .theme-btn { min-height: 32px; min-width: 32px; padding: 5px; font-size: 0.85rem; border-radius: 6px; }
+
         /* ===== Sales Card View (Neuro style) ===== */
         .view-toggle { display: inline-flex; gap: 4px; margin-left: 6px; }
         .view-toggle-btn {
@@ -811,7 +820,10 @@
         // ---- Global state ----
         let allRows = [];
         let salesRows = [];
-        let cleanRows = []; // untuk tab Rapikan
+        // Catatan: data tab Rapikan TIDAK disimpan di variabel module-level di
+        // sini. Tab Rapikan pakai `cleanRows` miliknya sendiri di dalam IIFE-nya
+        // dan menjembataninya lewat window.cleanRows / window.__rapGetCleanRows /
+        // window.__rapSetCleanRows — lihat bagian kode tab Rapikan di bawah.
 
         // ---- Cache & indeks (dibangun ulang hanya saat data berubah) ----
         let fakturIndexDirty = true;
@@ -4115,8 +4127,12 @@
                 if (typeof v === 'number') {
                     // Excel serial atau timestamp
                     if (v > 20000 && v < 100000) {
-                        const d = XLSX.SSF.parse_date_code(v);
-                        if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0);
+                        try {
+                            const d = XLSX.SSF.parse_date_code(v);
+                            if (d) return new Date(d.y, d.m - 1, d.d, d.H || 0, d.M || 0, d.S || 0);
+                        } catch (e) {
+                            console.warn('parse_date_code gagal untuk nilai', v, e);
+                        }
                     }
                     const d2 = new Date(v);
                     return isNaN(d2) ? null : d2;
