@@ -120,10 +120,15 @@
 
         .subtabs { display: none; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
         .subtabs.show { display: flex; }
-        .subtab-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; }
+        .subtab-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; line-height: 1.3; box-sizing: border-box; }
         .subtab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-        .subtab-dl { margin-left: auto; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; }
+        .subtab-dl { margin-left: auto; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; line-height: 1.3; box-sizing: border-box; font-family: inherit; }
         .subtab-dl:hover { border-color: var(--accent); color: var(--accent); }
+        .subtab-dl-wrap { position: relative; display: inline-flex; margin-left: auto; }
+        .subtab-dl-menu { display: none; position: absolute; right: 0; top: calc(100% + 5px); min-width: 190px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); z-index: 1000; padding: 5px; }
+        .subtab-dl-menu.open { display: block; }
+        .subtab-dl-menu button { display: block; width: 100%; border: 0; background: none; text-align: left; padding: 8px 10px; cursor: pointer; font-family: inherit; font-size: 0.8rem; color: var(--text); border-radius: 6px; }
+        .subtab-dl-menu button:hover { background: var(--bg); }
 
         .profit-wrap { display: none; overflow-x: auto; overflow-y: auto; max-height: 68vh; border: 1px solid var(--border); border-radius: 10px; background: var(--card); box-shadow: var(--shadow); -webkit-overflow-scrolling: touch; }
         .profit-wrap.show { display: block; }
@@ -181,6 +186,16 @@
         .cek-bulan-divider { height: 1px; background: var(--border); margin: 3px 0; }
         .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 600; font-size: 0.85rem; cursor: pointer; min-height: 44px; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+        /* Cek Data: baris filter dibuat setipis baris cards di atasnya */
+        #cekSearchBar { gap: 6px; margin-bottom: 10px; }
+        #cekSearchBar input,
+        #cekSearchBar select,
+        #cekSearchBar .btn,
+        #cekSearchBar .cek-bulan-multi-btn {
+            min-height: 32px; padding: 5px 9px; font-size: 0.78rem; border-radius: 6px;
+        }
+        #cekSearchBar .cek-bulan-multi-btn { min-width: 110px; }
 
         /* ===== Sales Card View (Neuro style) ===== */
         .view-toggle { display: inline-flex; gap: 4px; margin-left: 6px; }
@@ -541,8 +556,13 @@
                     <button type="button" class="view-toggle-btn active" id="btnViewTable" onclick="setSalesViewMode('table')">☰ Tabel</button>
                     <button type="button" class="view-toggle-btn" id="btnViewCards" onclick="setSalesViewMode('cards')">▦ Kartu</button>
                 </div>
-                <button class="subtab-dl" id="btnDlProfit" onclick="downloadCurrentSalesExcel('filter')">⬇ Filter</button>
-                <button class="subtab-dl" id="btnDlTransAll" onclick="downloadCurrentSalesExcel('all')">⬇ Semua</button>
+                <div class="subtab-dl-wrap" id="salesDlWrap">
+                    <button type="button" class="subtab-dl" id="salesDlToggle" onclick="toggleSalesDlMenu(event)">⬇ Menu ▾</button>
+                    <div class="subtab-dl-menu" id="salesDlMenu">
+                        <button type="button" id="btnDlProfit" onclick="downloadCurrentSalesExcel('filter');closeSalesDlMenu()">⬇ Filter</button>
+                        <button type="button" id="btnDlTransAll" onclick="downloadCurrentSalesExcel('all');closeSalesDlMenu()">⬇ Semua</button>
+                    </div>
+                </div>
             </div>
 
             <div class="table-wrap" id="salesTableWrap" style="display:none;">
@@ -569,11 +589,11 @@
             <div class="subtabs show" id="cekSubtabs" style="display:flex;">
                 <button class="subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
                 <button class="subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
-                <div class="cek-download-wrap" style="position:relative;display:inline-block;">
+                <div class="subtab-dl-wrap cek-download-wrap" id="cekDownloadWrap">
                     <button type="button" class="subtab-dl" id="cekDownloadBtn" onclick="toggleCekDownloadMenu(event)">📥 Download ▾</button>
-                    <div id="cekDownloadMenu" style="display:none;position:absolute;right:0;top:calc(100% + 5px);min-width:190px;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);z-index:1000;padding:5px;">
-                        <button type="button" onclick="downloadCekExcel('filter');closeCekDownloadMenu()" style="display:block;width:100%;border:0;background:none;text-align:left;padding:8px 10px;cursor:pointer;">⬇ Sesuai Filter</button>
-                        <button type="button" onclick="downloadCekExcel('all');closeCekDownloadMenu()" style="display:block;width:100%;border:0;background:none;text-align:left;padding:8px 10px;cursor:pointer;">⬇ Semua Data</button>
+                    <div class="subtab-dl-menu" id="cekDownloadMenu">
+                        <button type="button" onclick="downloadCekExcel('filter');closeCekDownloadMenu()">⬇ Sesuai Filter</button>
+                        <button type="button" onclick="downloadCekExcel('all');closeCekDownloadMenu()">⬇ Semua Data</button>
                     </div>
                 </div>
             </div>
@@ -2527,6 +2547,18 @@
                 btnDlAll.style.display = 'none';
             }
         }
+        function toggleSalesDlMenu(e) {
+            if (e) e.stopPropagation();
+            const m = document.getElementById('salesDlMenu'); if (!m) return;
+            m.classList.toggle('open');
+        }
+        function closeSalesDlMenu() {
+            const m = document.getElementById('salesDlMenu'); if (m) m.classList.remove('open');
+        }
+        document.addEventListener('click', function(e) {
+            const m = document.getElementById('salesDlMenu'); const w = document.getElementById('salesDlWrap');
+            if (m && w && !w.contains(e.target)) m.classList.remove('open');
+        });
 
         // ---- Profit functions (sama seperti sebelumnya, hanya di-cache) ----
         function getSalesPeriodLabel() {
@@ -3045,7 +3077,6 @@
                 if (hint) hint.style.display = 'none';
                 closeCekBulanPanel();
             }
-            cekFakturCacheDirty = true;
             renderCekTable();
         }
 
@@ -3189,14 +3220,14 @@
         function toggleCekDownloadMenu(e) {
             if (e) e.stopPropagation();
             const m = document.getElementById('cekDownloadMenu'); if (!m) return;
-            m.style.display = m.style.display === 'block' ? 'none' : 'block';
+            m.classList.toggle('open');
         }
         function closeCekDownloadMenu() {
-            const m = document.getElementById('cekDownloadMenu'); if (m) m.style.display = 'none';
+            const m = document.getElementById('cekDownloadMenu'); if (m) m.classList.remove('open');
         }
         document.addEventListener('click', function(e) {
-            const m = document.getElementById('cekDownloadMenu'); const w = document.querySelector('.cek-download-wrap');
-            if (m && w && !w.contains(e.target)) m.style.display = 'none';
+            const m = document.getElementById('cekDownloadMenu'); const w = document.getElementById('cekDownloadWrap');
+            if (m && w && !w.contains(e.target)) m.classList.remove('open');
         });
 
         // Validasi tanggal khusus Cek Data -> Tempo.
@@ -4643,9 +4674,10 @@
                 document.getElementById('tabBtnCek').classList.remove('active');
             }
             if (tab === 'cek') {
-                // pastikan indeks selalu segar saat buka tab Cek
-                cekFakturCacheDirty = true;
-                salesFakturMapDirty = true;
+                // Cukup render ulang tampilan; cache faktur/sales hanya perlu
+                // dibangun ulang saat data benar-benar berubah (lihat
+                // invalidateFakturIndex/invalidateSalesIndex), bukan setiap
+                // kali tab Cek Data dibuka — ini yang bikin klik terasa lambat.
                 renderCekTable();
             }
         }
@@ -4800,7 +4832,7 @@
             openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
-            downloadCurrentSalesExcel, clearSalesData,
+            downloadCurrentSalesExcel, clearSalesData, toggleSalesDlMenu, closeSalesDlMenu,
             switchCekSub, toggleCekBulanPanel, onCekBulanAllChange, onCekBulanItemChange,
             toggleCekDownloadMenu, renderCekTable, resetCekSearch, downloadCekExcel,
             pickBackupFolder, restoreFromBackupFolder, saveBackupJson, setAutoBackupJsonEnabled,
