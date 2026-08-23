@@ -3634,7 +3634,7 @@
                     const isAll = !cekSelectedBulanMulti.length || cekSelectedBulanMulti.includes('all');
                     list.innerHTML = months.map(m => {
                         const checked = !isAll && cekSelectedBulanMulti.includes(m) ? ' checked' : '';
-                        return '<label class="cek-bulan-item"><input type="checkbox" value="' + esc(m) + '"' + checked +
+                        return '<label class="cek-bulan-item"><input type="checkbox" name="cekBulan_' + esc(m) + '" value="' + esc(m) + '"' + checked +
                             ' onchange="onCekBulanItemChange()"><span>' + esc(m) +
                             (m === lastMonth ? ' (terbaru)' : '') + '</span></label>';
                     }).join('');
@@ -4288,7 +4288,7 @@
                             html += `<td>${escapeHtml(r.Pembayaran)}</td>`;
                         } else if (c === 'Harga Beli') {
                             html +=
-                                `<td class="editable num"><input type="number" placeholder="isi" value="${r['Harga Beli']!=null?r['Harga Beli']:''}" data-idx="${idx}" data-col="Harga Beli" oninput="window.__rapEditCell(this)"></td>`;
+                                `<td class="editable num"><input type="number" name="rapHargaBeli_${idx}" placeholder="isi" value="${r['Harga Beli']!=null?r['Harga Beli']:''}" data-idx="${idx}" data-col="Harga Beli" oninput="window.__rapEditCell(this)"></td>`;
                         } else if (NUM_COLS.has(c)) {
                             html += `<td class="num">${fmtNum(r[c])}</td>`;
                         } else {
