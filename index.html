@@ -815,7 +815,7 @@
         let fakturLastPayMap = {};
         let salesFakturMapDirty = true;
         let salesFakturMap = new Map(); // Map<faktur, agregat>
-        let cekFakturCacheDirty = true;
+        let cekFakturCacheDirty = { cash: true, tempo: true };
         let cekFakturCache = { cash: [], tempo: [] };
 
         // ---- Supabase config ----
@@ -1483,12 +1483,14 @@
         // ---- Invalidate cache ----
         function invalidateFakturIndex() {
             fakturIndexDirty = true;
-            cekFakturCacheDirty = true;
+            cekFakturCacheDirty.cash = true;
+            cekFakturCacheDirty.tempo = true;
         }
 
         function invalidateSalesIndex() {
             salesFakturMapDirty = true;
-            cekFakturCacheDirty = true;
+            cekFakturCacheDirty.cash = true;
+            cekFakturCacheDirty.tempo = true;
         }
 
         // ---- Build LastPayMap ----
@@ -3146,15 +3148,25 @@
                     '<option value="lunas">Lunas</option>' +
                     '<option value="belum_jt">Belum Jatuh Tempo</option>' +
                     '<option value="overdue">Sudah Jatuh Tempo</option>' +
-                    '<option value="titip">Titip / Sebagian</option>';
+                    '<option value="titip">Titip / Sebagian</option>' +
+                    '<option value="not_in_sales">⚠ Tidak Ada di Data Penjualan</option>';
             } else {
                 sel.innerHTML = '<option value="all">Semua Status</option>' +
                     '<option value="lunas">Lunas</option>' +
                     '<option value="titip">Titip / Sebagian</option>' +
-                    '<option value="belum_bayar">Belum Bayar</option>';
+                    '<option value="belum_bayar">Belum Bayar</option>' +
+                    '<option value="not_in_sales">⚠ Tidak Ada di Data Penjualan</option>';
             }
             const validValues = Array.from(sel.options).map(o => o.value);
             sel.value = validValues.includes(cur) ? cur : 'all';
+        }
+
+        // ---- Badge: faktur yang cuma ada di Uang Masuk, tidak ketemu di Data Penjualan ----
+        function notInSalesBadge(r) {
+            if (r.fromSales !== false) return '';
+            return '<span title="Faktur ini ada di Uang Masuk, tapi tidak ditemukan di Data Penjualan. Nominal/Item mungkin tidak lengkap." ' +
+                'style="display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:0.65rem;font-weight:700;' +
+                'background:var(--yellow-bg);color:var(--yellow);white-space:nowrap;vertical-align:middle;">⚠ Tidak di Penjualan</span>';
         }
 
         // ---- Cek cache ----
@@ -3277,9 +3289,10 @@
         }
 
         function buildCekFakturList(payType) {
-            // Gunakan cache jika masih valid
-            if (!cekFakturCacheDirty && cekFakturCache[payType.toLowerCase()]) {
-                return cekFakturCache[payType.toLowerCase()];
+            const cacheKey = payType.toLowerCase();
+            // Gunakan cache jika masih valid (per tipe cash/tempo, masing-masing independen)
+            if (!cekFakturCacheDirty[cacheKey]) {
+                return cekFakturCache[cacheKey];
             }
             const salesMap = rebuildSalesFakturMap();
             const today = new Date();
@@ -3329,8 +3342,10 @@
                         if (!g.customer && s.customer) g.customer = s.customer;
                         if (!g.sales && s.sales) g.sales = s.sales;
                         if (!g.alamat && s.alamat) g.alamat = s.alamat;
+                        g.fromSales = true;
                     } else {
                         g.nominal = g.tagihan || g.paidAmount || 0;
+                        g.fromSales = false;
                     }
                     g.pembayaran = 'Dropping';
                     g.paid = g.hasLunas || (g.tagihan > 0 && g.paidAmount >= g.tagihan - 1);
@@ -3503,8 +3518,8 @@
                 return tb - ta;
             });
             // Simpan ke cache
-            cekFakturCache[payType.toLowerCase()] = out;
-            cekFakturCacheDirty = false;
+            cekFakturCache[cacheKey] = out;
+            cekFakturCacheDirty[cacheKey] = false;
             return out;
         }
 
@@ -3524,7 +3539,7 @@
                 if (isTempo) {
                     return '<tr>' +
                         '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
-                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span></td>' +
+                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span>' + notInSalesBadge(r) + '</td>' +
                         '<td class="toko">' + esc(r.customer) + '</td>' +
                         '<td>' + esc(r.sales) + '</td>' +
                         '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
@@ -3539,7 +3554,7 @@
                 }
                 return '<tr>' +
                     '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
-                    '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
+                    '<td class="faktur">' + esc(r.noFaktur) + notInSalesBadge(r) + '</td>' +
                     '<td class="toko">' + esc(r.customer) + '</td>' +
                     '<td>' + esc(r.sales) + '</td>' +
                     '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
@@ -3805,6 +3820,7 @@
                     if (stFilter === 'belum_jt') return r.statusCek === 'Belum Jatuh Tempo';
                     if (stFilter === 'titip') return r.statusCek === 'Titip';
                     if (stFilter === 'belum_bayar') return r.statusCek === 'Cash';
+                    if (stFilter === 'not_in_sales') return r.fromSales === false;
                     return true;
                 });
             }
