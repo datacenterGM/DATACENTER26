@@ -817,6 +817,8 @@
         let salesFakturMap = new Map(); // Map<faktur, agregat>
         let cekFakturCacheDirty = { cash: true, tempo: true };
         let cekFakturCache = { cash: [], tempo: [] };
+        let lastCekRows = []; // baris hasil render terakhir Cek Data (dipakai modal detail Tempo)
+        const CEK_TEMPO_DAYS = 12; // aturan jatuh tempo: transaksi + N hari
 
         // ---- Supabase config ----
         const SUPABASE_URL = 'https://tozrazbenakpjmgmjloe.supabase.co';
@@ -1298,6 +1300,7 @@
             const existing = new Set(allRows.map(r => r.faktur + '|' + r.sheet + '|' + r.section + '|' + r.tagihan));
 
             // Cek apakah browser mendukung Worker
+            let fakturWorkerUrl = null;
             if (typeof Worker !== 'undefined') {
                 try {
                     // Buat worker inline
@@ -1387,7 +1390,7 @@
                 }
               };
             `], { type: 'application/javascript' });
-                    const worker = new Worker(URL.createObjectURL(workerBlob));
+                    const worker = new Worker(fakturWorkerUrl = URL.createObjectURL(workerBlob));
 
                     for (let fi = 0; fi < files.length; fi++) {
                         const file = files[fi];
@@ -1425,8 +1428,10 @@
                         if (fi < files.length - 1) await new Promise(r => setTimeout(r, 0));
                     }
                     worker.terminate();
+                    if (fakturWorkerUrl) { URL.revokeObjectURL(fakturWorkerUrl); fakturWorkerUrl = null; }
                 } catch (err) {
                     console.warn('Worker gagal, fallback ke main thread:', err);
+                    if (fakturWorkerUrl) { URL.revokeObjectURL(fakturWorkerUrl); fakturWorkerUrl = null; }
                     // Fallback ke main thread untuk semua file
                     for (let fi = 0; fi < files.length; fi++) {
                         const file = files[fi];
@@ -1984,6 +1989,7 @@
                 r.sheet));
 
             // Gunakan Worker jika tersedia
+            let salesWorkerUrl = null;
             if (typeof Worker !== 'undefined') {
                 try {
                     const workerBlob = new Blob([`
@@ -2063,7 +2069,7 @@
                   }
                 };
               `], { type: 'application/javascript' });
-                    const worker = new Worker(URL.createObjectURL(workerBlob));
+                    const worker = new Worker(salesWorkerUrl = URL.createObjectURL(workerBlob));
 
                     for (let fi = 0; fi < files.length; fi++) {
                         const file = files[fi];
@@ -2098,8 +2104,10 @@
                         if (fi < files.length - 1) await new Promise(r => setTimeout(r, 0));
                     }
                     worker.terminate();
+                    if (salesWorkerUrl) { URL.revokeObjectURL(salesWorkerUrl); salesWorkerUrl = null; }
                 } catch (err) {
                     console.warn('Worker gagal, fallback ke main thread:', err);
+                    if (salesWorkerUrl) { URL.revokeObjectURL(salesWorkerUrl); salesWorkerUrl = null; }
                     for (let fi = 0; fi < files.length; fi++) {
                         const file = files[fi];
                         names.push(file.name.length > 18 ? file.name.slice(0, 16) + '…' : file.name);
@@ -2557,10 +2565,6 @@
         function closeSalesDlMenu() {
             const m = document.getElementById('salesDlMenu'); if (m) m.classList.remove('open');
         }
-        document.addEventListener('click', function(e) {
-            const m = document.getElementById('salesDlMenu'); const w = document.getElementById('salesDlWrap');
-            if (m && w && !w.contains(e.target)) m.classList.remove('open');
-        });
 
         // ---- Profit functions (sama seperti sebelumnya, hanya di-cache) ----
         function getSalesPeriodLabel() {
@@ -3044,9 +3048,7 @@
         // ================================================================
         //  CEK DATA – DENGAN CACHE
         // ================================================================
-        const CEK_TEMPO_DAYS = 12;
         let cekSub = 'cash';
-        let lastCekRows = [];
         let cekBulanUserSet = false;
 
         // State pilihan bulan multi (Tempo)
@@ -3237,10 +3239,6 @@
         function closeCekDownloadMenu() {
             const m = document.getElementById('cekDownloadMenu'); if (m) m.classList.remove('open');
         }
-        document.addEventListener('click', function(e) {
-            const m = document.getElementById('cekDownloadMenu'); const w = document.getElementById('cekDownloadWrap');
-            if (m && w && !w.contains(e.target)) m.classList.remove('open');
-        });
 
         // Validasi tanggal khusus Cek Data -> Tempo.
         // Aturan utama: jatuh tempo = tanggal transaksi + CEK_TEMPO_DAYS.
@@ -3992,11 +3990,7 @@
                 cekBulanUserSet = true;
                 renderCekTable();
             });
-            // Tutup panel bulan jika klik di luar
-            document.addEventListener('click', function(e) {
-                const wrap = document.getElementById('cekBulanMultiWrap');
-                if (wrap && !wrap.contains(e.target)) closeCekBulanPanel();
-            });
+            // Tutup panel bulan jika klik di luar (ditangani oleh listener klik global gabungan)
             populateCekStatusOptions(cekSub);
         });
 
@@ -4701,17 +4695,25 @@
         function toggleMenu() { document.getElementById('menuDd').classList.toggle('open'); }
 
         function closeMenu() { document.getElementById('menuDd').classList.remove('open'); }
-        document.addEventListener('click', function(e) {
-            const wrap = document.getElementById('menuWrap');
-            if (wrap && !wrap.contains(e.target)) closeMenu();
-        });
 
         function toggleSalesMenu() { document.getElementById('salesMenuDd').classList.toggle('open'); }
 
         function closeSalesMenu() { document.getElementById('salesMenuDd').classList.remove('open'); }
+
+        // ---- Listener klik-luar gabungan (menggantikan beberapa listener document terpisah) ----
         document.addEventListener('click', function(e) {
-            const wrap = document.getElementById('salesMenuWrap');
-            if (wrap && !wrap.contains(e.target)) closeSalesMenu();
+            [
+                ['salesDlMenu', 'salesDlWrap'],
+                ['cekDownloadMenu', 'cekDownloadWrap'],
+                ['menuDd', 'menuWrap'],
+                ['salesMenuDd', 'salesMenuWrap']
+            ].forEach(function(pair) {
+                const m = document.getElementById(pair[0]);
+                const w = document.getElementById(pair[1]);
+                if (m && w && !w.contains(e.target)) m.classList.remove('open');
+            });
+            const bulanWrap = document.getElementById('cekBulanMultiWrap');
+            if (bulanWrap && !bulanWrap.contains(e.target)) closeCekBulanPanel();
         });
 
         // ---- PWA ----
