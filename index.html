@@ -853,7 +853,7 @@
             addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
             currentMonthName, preferredMonth, detectMonth, statusBadge,
             sectionBadge, statusBadgeCek, normalizeSearchText, flexibleSearchMatch,
-            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, chunkedFilter, yieldToMain
+            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, cekFakturSimilarity, chunkedFilter, yieldToMain
         } from './js/utils.js';
         import {
             DB_NAME, DB_VERSION, DB_STORE, DB_KEY, DB_KEY_SALES, DB_KEY_RAPIKAN,
@@ -3283,112 +3283,139 @@
         }
 
         // ---- Cek cache ----
-        // (normCekText, cekTextSimilar, cekAmountScore -> dipindah ke js/utils.js)
+        // (normCekText, cekTextSimilar, cekAmountScore, cekFakturSimilarity -> dipindah ke js/utils.js)
 
-        // Index kata (token) dari toko/alamat/salesName di umByFaktur, dipakai
-        // findCekFuzzyPayment supaya tidak perlu scan semua entri Uang Masuk
-        // untuk tiap faktur yang belum matched. Dibangun sekali per build
-        // (bukan per faktur), jadi biayanya O(M) sekali, bukan O(N x M).
-        function buildCekFuzzyTokenIndex(umByFaktur) {
-            const index = new Map(); // token -> Set<fakturKey>
-            for (const [fk, u] of umByFaktur.entries()) {
-                if (!u) continue;
+        // Ambang skor & bobot identitas dipakai BERSAMA oleh tabel Cek Data Tempo
+        // (resolveCekFuzzyMatchesGlobally) dan rekonsiliasi Uang Masuk
+        // (buildCekUangMasukReconciliation), supaya dua tempat itu selalu sepakat
+        // soal faktur mana yang cocok dengan pembayaran mana. Sebelum ini keduanya
+        // punya bobot & ambang beda sendiri-sendiri, jadi bisa saling kontradiksi.
+        const CEK_FUZZY_THRESHOLD = 11;
+
+        // Index kata (token) dari customer/alamat/sales sebuah koleksi record,
+        // dipakai untuk mempersempit kandidat fuzzy-match tanpa scan semua data.
+        // getFields(record) -> { customer, alamat, sales }.
+        function buildCekFuzzyTokenIndex(entries, getFields) {
+            const index = new Map(); // token -> Set<key>
+            for (const [key, rec] of entries) {
+                if (!rec) continue;
+                const f = getFields(rec);
                 const tokens = new Set([
-                    ...normCekTokens(u.toko),
-                    ...normCekTokens(u.alamat),
-                    ...normCekTokens(u.salesName)
+                    ...normCekTokens(f.customer),
+                    ...normCekTokens(f.alamat),
+                    ...normCekTokens(f.sales)
                 ]);
                 for (const t of tokens) {
                     let set = index.get(t);
                     if (!set) { set = new Set(); index.set(t, set); }
-                    set.add(fk);
+                    set.add(key);
                 }
             }
             return index;
         }
 
-        // umTokenIndex opsional: kalau ada, kandidat dipersempit ke entri yang
-        // minimal berbagi satu kata dengan customer/alamat/sales dari g,
-        // supaya tidak perlu scan seluruh umByFaktur. Kalau kandidat dari
-        // index kosong (mis. teks nyambung tanpa spasi), fallback ke scan
-        // penuh untuk faktur itu saja, supaya tidak ada match yang hilang.
-        function findCekFuzzyPayment(g, umByFaktur, usedKeys, umTokenIndex) {
-            let best = null, bestScore = 0;
-            const gDate = g.tglDate instanceof Date && !isNaN(g.tglDate) ? g.tglDate : null;
-
-            let candidateKeys = null;
-            if (umTokenIndex) {
-                const gTokens = new Set([
-                    ...normCekTokens(g.customer),
-                    ...normCekTokens(g.alamat),
-                    ...normCekTokens(g.sales)
-                ]);
-                const merged = new Set();
-                for (const t of gTokens) {
-                    const set = umTokenIndex.get(t);
-                    if (set) for (const fk of set) merged.add(fk);
-                }
-                if (merged.size) candidateKeys = merged;
-                // Kalau merged kosong, candidateKeys tetap null -> fallback full scan.
+        // Cari kandidat key dari token index untuk satu record. Kembalikan null
+        // kalau index tidak tersedia / kandidat kosong -> caller fallback full scan,
+        // supaya tidak ada match yang hilang gara-gara teks nyambung tanpa spasi.
+        function lookupCekFuzzyCandidates(tokenIndex, fields) {
+            if (!tokenIndex) return null;
+            const tokens = new Set([
+                ...normCekTokens(fields.customer),
+                ...normCekTokens(fields.alamat),
+                ...normCekTokens(fields.sales)
+            ]);
+            const merged = new Set();
+            for (const t of tokens) {
+                const set = tokenIndex.get(t);
+                if (set) for (const k of set) merged.add(k);
             }
-            const entries = candidateKeys
-                ? Array.from(candidateKeys, fk => [fk, umByFaktur.get(fk)])
-                : umByFaktur.entries();
+            return merged.size ? merged : null;
+        }
 
-            for (const [fk, u] of entries) {
-                if (usedKeys.has(fk) || !u) continue;
-                const paymentAmount = Number(u.paidAmount) || 0;
-                const referenceAmount = Number(g.nominal) || Number(u.tagihanUM) || 0;
-                if (!paymentAmount && !u.hasLunas) continue;
+        // Skor fuzzy tunggal: identitas (customer/alamat/sales) + tanggal + skor
+        // nominal (dihitung caller, lewat cekAmountScore) + kemiripan No.Faktur.
+        // a, b: { customer, alamat, sales, tglDate, faktur }. amountScoreValue:
+        // hasil cekAmountScore yang sudah dihitung caller (beda makna nominal
+        // di tiap domain, jadi dihitung di luar). Return null kalau identitas
+        // tidak cukup kuat (wajib minimal 2 dari 3) atau skor total < ambang.
+        function computeCekFuzzyScore(a, b, amountScoreValue) {
+            const sameCustomer = cekTextSimilar(a.customer, b.customer);
+            const sameAddress = cekTextSimilar(a.alamat, b.alamat);
+            const sameSales = cekTextSimilar(a.sales, b.sales);
+            const identityCount = [sameCustomer, sameAddress, sameSales].filter(Boolean).length;
+            if (identityCount < 2) return null;
 
-                const sameCustomer = cekTextSimilar(g.customer, u.toko);
-                const sameAddress = cekTextSimilar(g.alamat, u.alamat);
-                const sameSales = cekTextSimilar(g.sales, u.salesName);
-                let identity = 0;
-                if (sameCustomer) identity += 4;
-                if (sameAddress) identity += 4;
-                if (sameSales) identity += 2;
+            let score = 0;
+            if (sameCustomer) score += 5;
+            if (sameAddress) score += 5;
+            if (sameSales) score += 3;
+            score += Number(amountScoreValue) || 0;
 
-                // Tanggal dipakai untuk membedakan beberapa faktur milik toko yang sama.
-                let dateScore = 0;
-                const uDate = parseSalesDate(u.dateLabel);
-                if (gDate && uDate) {
-                    const diffDays = Math.abs(Math.round((gDate - uDate) / 86400000));
-                    if (diffDays <= 31) dateScore = 3;
-                    else if (diffDays <= 90) dateScore = 1;
-                }
-
-                const amount = cekAmountScore(paymentAmount, referenceAmount);
-                if (!amount && !u.hasLunas) continue;
-
-                // Bonus kecil bila nomor faktur sangat mirip (kesalahan ketik).
-                const a = String(g.noFaktur || '').replace(/\D/g, '');
-                const b = String(fk || '').replace(/\D/g, '');
-                let fakturScore = 0;
-                if (a && b && a.length === b.length) {
-                    let same = 0;
-                    for (let i = 0; i < a.length; i++) if (a[i] === b[i]) same++;
-                    if (same >= Math.max(4, a.length - 2)) fakturScore = 1;
-                }
-
-                const score = identity + dateScore + amount + fakturScore;
-                // Wajib ada minimal dua identitas yang cocok. Nominal/tanggal menjadi penguat,
-                // bukan pengganti identitas customer/alamat/sales.
-                const strongIdentity = (sameCustomer && sameAddress) ||
-                    (sameCustomer && sameSales) || (sameAddress && sameSales);
-                if (!strongIdentity || score < 7) continue;
-
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = {
-                        key: fk,
-                        data: u,
-                        score,
-                        match: { customer: sameCustomer, address: sameAddress, sales: sameSales }
-                    };
-                }
+            let dateScore = 0;
+            const aDate = a.tglDate, bDate = b.tglDate;
+            if (aDate instanceof Date && !isNaN(aDate) && bDate instanceof Date && !isNaN(bDate)) {
+                const diffDays = Math.abs(Math.round((aDate - bDate) / 86400000));
+                if (diffDays <= 31) dateScore = 3;
+                else if (diffDays <= 90) dateScore = 1;
             }
-            return best;
+            score += dateScore;
+            score += cekFakturSimilarity(a.faktur, b.faktur);
+
+            if (score < CEK_FUZZY_THRESHOLD) return null;
+            return { score, sameCustomer, sameAddress, sameSales };
+        }
+
+        // Cocokkan SEMUA faktur yang belum exact-matched terhadap SEMUA entri
+        // Uang Masuk yang belum kepakai, sekaligus (bukan satu-satu sesuai urutan
+        // data). Semua pasangan valid dikumpulkan dulu, diurutkan skor tertinggi
+        // ke rendah, baru di-assign satu-satu. Ini mencegah faktur yang diproses
+        // duluan "mencuri" pasangan yang skornya lebih rendah, padahal pasangan
+        // yang lebih cocok untuk faktur lain masih tersedia.
+        async function resolveCekFuzzyMatchesGlobally(unresolvedList, umByFaktur, usedKeys) {
+            const tokenIndex = buildCekFuzzyTokenIndex(
+                umByFaktur.entries(),
+                u => ({ customer: u.toko, alamat: u.alamat, sales: u.salesName })
+            );
+
+            const pairs = [];
+            let scanned = 0;
+            for (const g of unresolvedList) {
+                const gFields = { customer: g.customer, alamat: g.alamat, sales: g.sales, tglDate: g.tglDate, faktur: g.noFaktur };
+                const candidateKeys = lookupCekFuzzyCandidates(tokenIndex, gFields) || umByFaktur.keys();
+                for (const fk of candidateKeys) {
+                    if (usedKeys.has(fk)) continue;
+                    const u = umByFaktur.get(fk);
+                    if (!u) continue;
+                    const paymentAmount = Number(u.paidAmount) || 0;
+                    const referenceAmount = Number(g.nominal) || Number(u.tagihanUM) || 0;
+                    if (!paymentAmount && !u.hasLunas) continue;
+                    const amountScoreValue = cekAmountScore(paymentAmount, referenceAmount);
+                    if (!amountScoreValue && !u.hasLunas) continue;
+
+                    const uFields = { customer: u.toko, alamat: u.alamat, sales: u.salesName, tglDate: parseSalesDate(u.dateLabel), faktur: fk };
+                    const res = computeCekFuzzyScore(gFields, uFields, amountScoreValue);
+                    if (!res) continue;
+
+                    pairs.push({ g, fk, u, score: res.score, match: { customer: res.sameCustomer, address: res.sameAddress, sales: res.sameSales } });
+                }
+                scanned++;
+                if (scanned % 40 === 0) await yieldToMain();
+            }
+
+            pairs.sort((x, y) => y.score - x.score);
+
+            const resolvedByFaktur = new Map(); // g.noFaktur -> hasil match
+            const assignedG = new Set();
+            let assigned = 0;
+            for (const pair of pairs) {
+                if (usedKeys.has(pair.fk) || assignedG.has(pair.g.noFaktur)) continue;
+                usedKeys.add(pair.fk);
+                assignedG.add(pair.g.noFaktur);
+                resolvedByFaktur.set(pair.g.noFaktur, { key: pair.fk, data: pair.u, score: pair.score, match: pair.match });
+                assigned++;
+                if (assigned % 40 === 0) await yieldToMain();
+            }
+            return resolvedByFaktur;
         }
         function toggleCekDownloadMenu(e) {
             if (e) e.stopPropagation();
@@ -3603,25 +3630,27 @@
                     });
                 }
 
-                // Index kata dibangun sekali (O(M)) sebelum loop, dipakai findCekFuzzyPayment
-                // untuk mempersempit kandidat per faktur (lihat buildCekFuzzyTokenIndex).
-                const umTokenIndex = buildCekFuzzyTokenIndex(umByFaktur);
+                // Faktur yang exact-match (No.Faktur sama persis) diselesaikan dulu.
+                // Sisanya (belum exact) dicocokkan sekaligus lewat pencarian global
+                // berbasis skor tertinggi (resolveCekFuzzyMatchesGlobally), bukan
+                // satu-satu sesuai urutan data -- supaya faktur yang diproses lebih
+                // dulu tidak "mencuri" pasangan yang sebenarnya lebih cocok untuk
+                // faktur lain.
                 const fuzzyUsed = new Set();
                 const resolvedUM = new Map();
-                let fuzzyProcessed = 0;
+                const needsFuzzy = [];
                 for (const g of byFaktur.values()) {
                     const exact = umByFaktur.get(g.noFaktur);
                     if (exact) { resolvedUM.set(g.noFaktur, exact); fuzzyUsed.add(g.noFaktur); continue; }
-                    const hit = findCekFuzzyPayment(g, umByFaktur, fuzzyUsed, umTokenIndex);
+                    needsFuzzy.push(g);
+                }
+                const fuzzyResults = await resolveCekFuzzyMatchesGlobally(needsFuzzy, umByFaktur, fuzzyUsed);
+                for (const g of needsFuzzy) {
+                    const hit = fuzzyResults.get(g.noFaktur);
                     if (hit) {
-                        resolvedUM.set(g.noFaktur, hit.data); fuzzyUsed.add(hit.key);
+                        resolvedUM.set(g.noFaktur, hit.data);
                         g.paymentMatch = 'FUZZY'; g.paymentMatchFaktur = hit.key; g.paymentMatchScore = hit.score; g.paymentMatchInfo = hit.match || {};
                     }
-                    // Non-blocking: hanya faktur yang belum matched exact yang masuk sini
-                    // (biasanya jauh lebih sedikit dari total), tapi tiap satu tetap bisa
-                    // mahal (fuzzy text match). Kasih jeda ke UI tiap 40 faktur diproses.
-                    fuzzyProcessed++;
-                    if (fuzzyProcessed % 40 === 0) await yieldToMain();
                 }
                 for (const g of byFaktur.values()) {
                     const u = resolvedUM.get(g.noFaktur);
@@ -3794,7 +3823,7 @@
         // Periode mengikuti TANGGAL UANG MASUK (r.month), bukan bulan transaksi/jatuh tempo faktur.
         // Setiap baris pembayaran dihitung sekali. Identifikasi harus mengarah ke faktur penjualan;
         // section Cash Dropping / Piutang hanya menjadi petunjuk, bukan pengganti faktur.
-        function buildCekUangMasukReconciliation(selectedMonths) {
+        async function buildCekUangMasukReconciliation(selectedMonths) {
             const selected = Array.isArray(selectedMonths) ? selectedMonths.filter(m => m && m !== 'all') : [];
             const useAll = !selected.length;
             const inPeriod = r => useAll || selected.includes(r.month);
@@ -3830,26 +3859,6 @@
                 sp = String(sp || '').toUpperCase().trim();
                 return (sp === 'CASH' || sp.startsWith('CASH') || sp === 'TUNAI') ? 'CASH' : 'TEMPO';
             };
-            const normNum = v => String(v || '').replace(/\D/g,'');
-            const amountScore = (paid, nominal) => {
-                paid = Number(paid)||0; nominal = Number(nominal)||0;
-                if (!paid || !nominal) return 0;
-                const diff = Math.abs(paid-nominal);
-                if (diff <= 1) return 7;
-                if (paid < nominal && paid >= nominal*0.45) return 5;
-                if (diff <= Math.max(1000, nominal*0.03)) return 4;
-                return 0;
-            };
-            const invoiceSimilarity = (a,b) => {
-                a=normNum(a); b=normNum(b);
-                if (!a || !b || a.length!==b.length) return 0;
-                let same=0; for(let i=0;i<a.length;i++) if(a[i]===b[i]) same++;
-                if (same===a.length) return 8;
-                if (same>=Math.max(4,a.length-1)) return 3;
-                if (same>=Math.max(4,a.length-2)) return 1;
-                return 0;
-            };
-            const textSim = (a,b) => cekTextSimilar(a,b);
 
             // Exact match berdasarkan No.Faktur ditetapkan lebih dulu. Ini paling kuat dan
             // tidak tergantung pada nama/alamat yang mungkin ditulis dengan variasi.
@@ -3867,45 +3876,63 @@
             const fuzzyCandidates = [...salesMap.values()];
 
             // Fuzzy match: identitas harus kuat (minimal dua dari Customer/Alamat/Sales),
-            // lalu nominal/tanggal/kemiripan faktur menjadi penguat. Satu pembayaran hanya
-            // dapat dipakai sekali, tetapi satu faktur boleh menerima beberapa pembayaran cicilan.
+            // skor dihitung lewat computeCekFuzzyScore yang SAMA dipakai tabel Cek Data
+            // Tempo (lihat CEK_FUZZY_THRESHOLD), supaya dua tempat itu selalu sepakat.
+            // Semua pasangan (pembayaran, faktur) yang valid dikumpulkan dulu, diurutkan
+            // skor tertinggi ke rendah, baru di-assign -- bukan satu-satu sesuai urutan
+            // data -- supaya pembayaran yang diproses duluan tidak "mencuri" faktur yang
+            // sebenarnya lebih cocok untuk pembayaran lain.
+            const salesTokenIndex = buildCekFuzzyTokenIndex(
+                fuzzyCandidates.map(sp => [sp.noFaktur, sp]),
+                sp => ({ customer: sp.customer, alamat: sp.alamat, sales: sp.sales })
+            );
+
+            const candidatePairs = [];
+            let scanned = 0;
             for (const pg of fuzzyPayments) {
                 const u = pg.rows[0] || {};
-                let best = null;
-                for (const sp of fuzzyCandidates) {
-                    const sameCustomer = textSim(sp.customer, u.toko);
-                    const sameAddress = textSim(sp.alamat, u.alamat);
-                    const sameSales = textSim(sp.sales, u.sales);
-                    const identityCount = [sameCustomer,sameAddress,sameSales].filter(Boolean).length;
-                    if (identityCount < 2) continue;
-
-                    let score = 0;
-                    if (sameCustomer) score += 5;
-                    if (sameAddress) score += 5;
-                    if (sameSales) score += 3;
-                    score += amountScore(pg.amount, sp.nominal);
-                    score += invoiceSimilarity(sp.noFaktur, pg.fk);
-
-                    const pDate = parseSalesDate(u.date || u.tanggal || '');
-                    if (pDate && sp.tglDate) {
-                        const diff = Math.abs(Math.round((pDate-sp.tglDate)/86400000));
-                        if (diff <= 31) score += 3;
-                        else if (diff <= 90) score += 1;
-                    }
-
-                    const already = matchedBySales.get(sp.noFaktur) || 0;
-                    const remaining = Math.max(0, Number(sp.nominal)||0 - already);
-                    // Pembayaran parsial boleh masuk. Jika jauh melebihi sisa faktur, jangan paksa.
-                    if (sp.nominal > 0 && pg.amount > remaining + Math.max(1000, sp.nominal*0.03)) continue;
-                    if (score < 11) continue;
-                    if (!best || score > best.score) {
-                        best = { matchedFaktur:sp.noFaktur, category:categoryOfSales(sp.pembayaranSales), matchType:'FUZZY', score, match:{customer:sameCustomer,address:sameAddress,sales:sameSales} };
-                    }
+                const pFields = { customer: u.toko, alamat: u.alamat, sales: u.sales, tglDate: parseSalesDate(u.date || u.tanggal || ''), faktur: pg.fk };
+                const candKeys = lookupCekFuzzyCandidates(salesTokenIndex, pFields);
+                const candList = candKeys ? Array.from(candKeys, k => salesMap.get(k)).filter(Boolean) : fuzzyCandidates;
+                for (const sp of candList) {
+                    // Prefilter longgar pakai nominal PENUH faktur (belum dikurangi cicilan
+                    // yang mungkin ter-assign belakangan) -- cuma buang pasangan yang jelas
+                    // mustahil (bayar jauh lebih besar dari total faktur). Pengecekan sisa
+                    // saldo yang sebenarnya (setelah cicilan lain ter-assign) terjadi nanti
+                    // saat assign, karena baru diketahui setelah urutan assign ditentukan.
+                    if (sp.nominal > 0 && pg.amount > sp.nominal + Math.max(1000, sp.nominal * 0.03)) continue;
+                    const amountScoreValue = cekAmountScore(pg.amount, sp.nominal);
+                    const spFields = { customer: sp.customer, alamat: sp.alamat, sales: sp.sales, tglDate: sp.tglDate, faktur: sp.noFaktur };
+                    const res = computeCekFuzzyScore(pFields, spFields, amountScoreValue);
+                    if (!res) continue;
+                    candidatePairs.push({ pg, sp, score: res.score, match: { customer: res.sameCustomer, address: res.sameAddress, sales: res.sameSales } });
                 }
-                if (best) {
-                    resolved.push({ pg, ...best });
-                    matchedBySales.set(best.matchedFaktur, (matchedBySales.get(best.matchedFaktur)||0) + pg.amount);
-                }
+                scanned++;
+                if (scanned % 40 === 0) await yieldToMain();
+            }
+
+            candidatePairs.sort((a, b) => b.score - a.score);
+
+            const assignedPayments = new Set();
+            let assigned = 0;
+            for (const pair of candidatePairs) {
+                if (assignedPayments.has(pair.pg)) continue; // satu pembayaran cuma sekali
+                const already = matchedBySales.get(pair.sp.noFaktur) || 0;
+                const remaining = Math.max(0, (Number(pair.sp.nominal) || 0) - already);
+                // Sisa saldo dicek ULANG di sini (bukan cuma prefilter di atas), karena
+                // faktur ini bisa saja sudah "penuh" duluan oleh pasangan berskor lebih
+                // tinggi yang di-assign sebelumnya.
+                if (pair.sp.nominal > 0 && pair.pg.amount > remaining + Math.max(1000, pair.sp.nominal * 0.03)) continue;
+
+                assignedPayments.add(pair.pg);
+                matchedBySales.set(pair.sp.noFaktur, already + pair.pg.amount);
+                resolved.push({
+                    pg: pair.pg, matchedFaktur: pair.sp.noFaktur,
+                    category: categoryOfSales(pair.sp.pembayaranSales),
+                    matchType: 'FUZZY', score: pair.score, match: pair.match
+                });
+                assigned++;
+                if (assigned % 40 === 0) await yieldToMain();
             }
 
             const resolutionByPayment = new Map(resolved.map(x => [x.pg, x]));
@@ -3920,8 +3947,8 @@
             return { total, cash, tempo, unidentified, details, balanced: Math.abs(checkTotal-total) < 0.5, checkTotal };
         }
 
-        function updateCekReconciliationCards(selectedMonths) {
-            const rec = buildCekUangMasukReconciliation(selectedMonths);
+        async function updateCekReconciliationCards(selectedMonths) {
+            const rec = await buildCekUangMasukReconciliation(selectedMonths);
             const set = (id, value) => { const el=document.getElementById(id); if(el) el.textContent=Number(value||0).toLocaleString('id-ID'); };
             set('cekCardUMCash', rec.cash);
             set('cekCardUMTempo', rec.tempo);
