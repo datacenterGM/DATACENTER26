@@ -180,6 +180,8 @@
         .profit-table tr:hover td { background: var(--table-hover); }
         .profit-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .profit-table .total-row td { font-weight: 700; border-top: 2px solid var(--border); background: var(--th-bg); }
+        .hj-clickable { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+        .hj-clickable:hover { color: var(--accent); }
         .profit-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 0.78rem; font-weight: 700; }
         .ringkasan-rupa-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-weight: 400; }
         .ringkasan-rupa-controls input, .ringkasan-rupa-controls select { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; color: var(--text); font-size: 0.75rem; outline: none; }
@@ -895,6 +897,26 @@
                 <div id="tempoJtContent"></div>
             </div>
         </div>
+
+        <!-- Modal Detail Harga Jual per Produk -->
+        <div class="modal-overlay" id="hargaJualModal" onclick="if(event.target===this)closeHargaJualModal()">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="hargaJualModalTitle">💲 Detail Harga Jual</h2>
+                    <button class="modal-close" onclick="closeHargaJualModal()">✕</button>
+                </div>
+                <div class="muted" id="hargaJualModalSub" style="margin-bottom:10px;font-size:0.8rem;"></div>
+                <div style="overflow-x:auto;">
+                    <table class="modal-table">
+                        <thead>
+                            <tr><th>Tanggal</th><th>No Faktur</th><th class="num">Jumlah</th><th class="num">Harga Jual</th><th class="num">Disc</th><th class="num">Total</th><th>Sales</th><th>Customer</th></tr>
+                        </thead>
+                        <tbody id="hargaJualModalBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
 
         <footer>DATACENTER · Mode terang / gelap · Upload Excel</footer>
     </div>
@@ -2155,7 +2177,45 @@
         }
 
         function closeFakturModal() { document.getElementById('fakturModal').classList.remove('open'); }
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeFakturModal(); closeCekTempoDetail(); } });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeFakturModal(); closeCekTempoDetail(); closeHargaJualModal(); } });
+
+        // ---- Modal Detail Harga Jual per Produk (klik sel range di Profit Per Produk) ----
+        function openHargaJualModal(produk) {
+            const scopeRows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+            const rows = scopeRows.filter(r => (r.produk || '').trim() === produk);
+            document.getElementById('hargaJualModalTitle').textContent = '💲 Detail Harga Jual — ' + produk;
+            document.getElementById('hargaJualModalSub').textContent = getSalesPeriodLabel() + ' · ' + rows.length
+                .toLocaleString('id-ID') + ' transaksi, diurutkan dari harga terendah';
+            if (!rows.length) {
+                document.getElementById('hargaJualModalBody').innerHTML =
+                    '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--muted)">Tidak ada data.</td></tr>';
+                document.getElementById('hargaJualModal').classList.add('open');
+                return;
+            }
+            const sorted = rows.slice().sort((a, b) => (a.hargaJual || 0) - (b.hargaJual || 0));
+            const validPrices = sorted.map(r => r.hargaJual || 0).filter(v => v > 0);
+            const minHj = validPrices.length ? Math.min(...validPrices) : 0;
+            document.getElementById('hargaJualModalBody').innerHTML = sorted.map(r => {
+                const isMin = r.hargaJual && r.hargaJual === minHj;
+                return '<tr' + (isMin ? ' style="background:var(--yellow-bg);"' : '') + '>' +
+                    '<td>' + esc(r.tanggal) + '</td>' +
+                    '<td>' + esc(r.noFaktur) + '</td>' +
+                    '<td class="num">' + (r.jumlah || 0).toLocaleString('id-ID') + '</td>' +
+                    '<td class="num">' + (isMin ? '<strong>' : '') + fmt(r.hargaJual) + (isMin ?
+                        ' ⬅ terendah</strong>' : '') + '</td>' +
+                    '<td class="num">' + fmt(r.disc) + '</td>' +
+                    '<td class="num">' + fmt(r.total) + '</td>' +
+                    '<td>' + esc(r.sales) + '</td>' +
+                    '<td>' + esc(r.customer) + '</td>' +
+                    '</tr>';
+            }).join('');
+            document.getElementById('hargaJualModal').classList.add('open');
+        }
+
+        function closeHargaJualModal() {
+            const m = document.getElementById('hargaJualModal');
+            if (m) m.classList.remove('open');
+        }
 
         // ---- Clear data ----
         function clearData() {
@@ -3023,13 +3083,16 @@
                 const hjDisplay = typeof r.hargaJual === 'object' && r.hargaJual.isRange 
                     ? fmt(r.hargaJual.max) + ' - ' + fmt(r.hargaJual.min)
                     : fmt(r.hargaJual);
+                const hjCell = r.hargaJual ? '<td class="num hj-clickable" onclick="openHargaJualModal(\'' +
+                    esc(r.produk).replace(/'/g, "\\'") + '\')" title="Klik untuk lihat detail transaksi per harga jual">' +
+                    hjDisplay + '</td>' : '<td class="num">' + hjDisplay + '</td>';
                 return '<tr>' +
                     '<td>' + (i + 1) + '</td>' +
                     '<td>' + esc(r.produk) + '</td>' +
                     '<td class="num">' + r.qty.toLocaleString('id-ID') + '</td>' +
                     '<td class="num">' + fmt(r.totalPenjualan) + '</td>' +
                     '<td class="num">' + fmt(r.totalHpp) + '</td>' +
-                    '<td class="num">' + hjDisplay + '</td>' +
+                    hjCell +
                     '<td class="num">' + fmt(r.hargaBeli) + '</td>' +
                     '<td class="num"><strong>' + fmt(r.profit) + '</strong></td>' +
                     '</tr>';
@@ -5565,7 +5628,7 @@
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
             openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
-            openTempoJtModal, closeTempoJtModal,
+            openTempoJtModal, closeTempoJtModal, openHargaJualModal, closeHargaJualModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
             downloadCurrentSalesExcel, clearSalesData, toggleSalesDlMenu, closeSalesDlMenu,
