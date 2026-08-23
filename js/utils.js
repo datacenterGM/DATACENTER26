@@ -248,77 +248,20 @@ export function normalizeSearchText(v) {
  * setiap kata pada query harus ditemukan di SALAH SATU field (bisa beda
  * field untuk tiap kata), sehingga "RAJU KARANGSAMBUNG" bisa cocok walau
  * "RAJU" ada di kolom SALES dan "KARANGSAMBUNG" ada di kolom ALAMAT.
- *
- * Opsional: kalau `row` + `cacheKey` diberikan, hasil normalisasi field
- * (bagian paling mahal — NFD normalize + regex) di-cache langsung di objek
- * baris (`row.__searchBlobs[cacheKey]`) supaya pencarian berikutnya pada
- * baris yang sama tidak menghitung ulang dari nol. Ini penting untuk
- * dataset besar (puluhan ribu baris) — tanpa cache, tiap kali user
- * menekan Enter, seluruh dataset dinormalisasi ulang dan bisa bikin UI
- * freeze sesaat. Cache otomatis "hilang" saat data di-reparse karena
- * objek baris yang baru tidak punya properti ini.
  * @param {string} query
  * @param {Array<*>} fields
- * @param {object} [row] Baris asal fields, untuk cache (opsional).
- * @param {string} [cacheKey] Kunci cache unik per konteks pencarian (mis. 'faktur', 'sales', 'cek').
  * @returns {boolean}
  */
-export function flexibleSearchMatch(query, fields, row, cacheKey) {
+export function flexibleSearchMatch(query, fields) {
     const q = normalizeSearchText(query);
     if (!q) return true;
-
-    let blob;
-    if (row && cacheKey) {
-        if (!row.__searchBlobs) row.__searchBlobs = {};
-        blob = row.__searchBlobs[cacheKey];
-        if (blob === undefined) {
-            blob = (fields || [])
-                .filter(v => v != null && String(v).trim() !== '')
-                .map(v => normalizeSearchText(v))
-                .join(' ');
-            row.__searchBlobs[cacheKey] = blob;
-        }
-    } else {
-        blob = (fields || [])
-            .filter(v => v != null && String(v).trim() !== '')
-            .map(v => normalizeSearchText(v))
-            .join(' ');
-    }
-
+    const fieldValues = (fields || [])
+        .filter(v => v != null && String(v).trim() !== '')
+        .map(v => normalizeSearchText(v));
     const tokens = q.split(' ').filter(Boolean);
-    return tokens.every(token => blob.includes(token));
-}
-
-/**
- * Filter array besar tanpa nge-freeze UI: proses per-chunk, dan kasih
- * kesempatan browser "bernapas" (render/scroll/input) di antara chunk lewat
- * requestIdleCallback (fallback setTimeout kalau tidak didukung, mis. Safari).
- * Dataset kecil (<= chunkSize) langsung diproses sinkron tanpa overhead.
- * @param {Array<*>} arr
- * @param {(item:*, index:number) => boolean} predicate
- * @param {number} [chunkSize] Jumlah baris diproses per "napas". Default 3000.
- * @returns {Promise<Array<*>>}
- */
-export function chunkedFilter(arr, predicate, chunkSize = 3000) {
-    if (!arr || arr.length <= chunkSize) {
-        return Promise.resolve((arr || []).filter(predicate));
-    }
-    return new Promise(resolve => {
-        const result = [];
-        let i = 0;
-        const scheduleNext = (typeof requestIdleCallback === 'function')
-            ? (cb) => requestIdleCallback(cb)
-            : (cb) => setTimeout(() => cb({ timeRemaining: () => 0 }), 0);
-        function step() {
-            const end = Math.min(i + chunkSize, arr.length);
-            for (; i < end; i++) {
-                if (predicate(arr[i], i)) result.push(arr[i]);
-            }
-            if (i < arr.length) scheduleNext(step);
-            else resolve(result);
-        }
-        scheduleNext(step);
-    });
+    return tokens.every(token =>
+        fieldValues.some(field => field.includes(token))
+    );
 }
 
 /**
@@ -361,4 +304,49 @@ export function cekAmountScore(paid, nominal) {
     if (diff <= Math.max(1000, nominal * 0.03)) return 3;
     if (paid < nominal && paid >= nominal * 0.45) return 2;
     return 0;
+}
+
+/**
+ * Pecah token kata dari teks yang sudah dinormalisasi lewat normCekText.
+ * Dipakai untuk membangun index pencarian fuzzy (lihat cekTextSimilar).
+ * @param {*} v
+ * @returns {string[]}
+ */
+export function normCekTokens(v) {
+    const n = normCekText(v);
+    return n ? n.split(' ').filter(Boolean) : [];
+}
+
+/**
+ * Serahkan kendali sebentar ke browser (event loop) supaya proses yang
+ * berat tidak membuat UI freeze. Dipakai oleh chunkedFilter dan proses
+ * berat lain yang jalan per-chunk (mis. fuzzy matching Cek Data Tempo).
+ * @returns {Promise<void>}
+ */
+export function yieldToMain() {
+    return new Promise(resolve => {
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => resolve());
+        } else {
+            setTimeout(resolve, 0);
+        }
+    });
+}
+
+/**
+ * Filter array besar tanpa memblokir UI: proses per-chunk, lalu kasih
+ * jeda ke browser (yieldToMain) di antara chunk.
+ * @param {Array<*>} arr
+ * @param {function(*): boolean} predicate
+ * @param {number} [chunkSize=300]
+ * @returns {Promise<Array<*>>}
+ */
+export async function chunkedFilter(arr, predicate, chunkSize = 300) {
+    const out = [];
+    const list = arr || [];
+    for (let i = 0; i < list.length; i++) {
+        if (predicate(list[i])) out.push(list[i]);
+        if ((i + 1) % chunkSize === 0) await yieldToMain();
+    }
+    return out;
 }
