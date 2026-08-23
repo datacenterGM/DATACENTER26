@@ -121,6 +121,20 @@
         .scard .sc-label { font-size: 0.58rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; line-height: 1.2; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .scard .sc-value { font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .scard.accent-total .sc-value { color: var(--text); }
+        .scard.clickable { cursor: pointer; transition: all 0.15s ease; }
+        .scard.clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); transform: translateY(-1px); }
+        
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-content { background: var(--card); border-radius: 12px; padding: 20px; max-width: 800px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); width: 90%; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+        .modal-header h2 { font-size: 1.1rem; margin: 0; }
+        .modal-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--muted); }
+        .modal-close:hover { color: var(--text); }
+        .modal-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        .modal-table th, .modal-table td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
+        .modal-table th { background: var(--th-bg); font-weight: 600; color: var(--muted); }
+        .modal-table tr:hover { background: var(--table-hover); }
 
         .subtabs { display: none; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
         .subtabs.show { display: flex; }
@@ -833,6 +847,17 @@
                     </div>
                     <div id="cekTempoModalConclusion" style="padding:11px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:.84rem;line-height:1.5;"></div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Modal untuk Tempo Sudah JT Detail -->
+        <div class="modal-overlay" id="tempoJtModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🚨 Detail Faktur Tempo Sudah Jatuh Tempo</h2>
+                    <button class="modal-close" onclick="closeTempoJtModal()">✕</button>
+                </div>
+                <div id="tempoJtContent"></div>
             </div>
         </div>
 
@@ -1982,6 +2007,57 @@
             if (m) m.classList.remove('open');
         }
 
+        // ---- Modal Tempo Sudah JT ----
+        function openTempoJtModal(allRows) {
+            // Filter data yang Tempo dan Overdue (JT)
+            const tempoJtRows = allRows.filter(r => r.tipeBayar === 'Tempo' && r.isOverdue);
+            
+            if (!tempoJtRows.length) {
+                document.getElementById('tempoJtContent').innerHTML = 
+                    '<div style="padding:20px;text-align:center;color:var(--muted);">Tidak ada data Tempo Sudah JT</div>';
+                document.getElementById('tempoJtModal').classList.add('open');
+                return;
+            }
+            
+            // Susun tabel
+            let html = `<table class="modal-table">
+                <thead>
+                    <tr>
+                        <th>No Faktur</th>
+                        <th>Tanggal</th>
+                        <th>Customer</th>
+                        <th>Sales</th>
+                        <th class="num">Nominal</th>
+                        <th class="num">Hari JT</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+            
+            tempoJtRows.forEach((r, idx) => {
+                const daysOverdue = r.daysOverdue || 0;
+                html += `<tr>
+                    <td><strong>${esc(r.faktur || '—')}</strong></td>
+                    <td>${esc(r.tanggal || '—')}</td>
+                    <td>${esc(r.customer || '—')}</td>
+                    <td>${esc(r.sales || '—')}</td>
+                    <td class="num">${fmt(r.nominal || 0)}</td>
+                    <td class="num" style="color:var(--red)"><strong>${daysOverdue}+ hari</strong></td>
+                </tr>`;
+            });
+            
+            html += `</tbody></table>`;
+            html += `<div style="margin-top:16px;padding:12px;background:var(--accent-soft);border-radius:8px;font-size:0.9rem;">
+                <strong>Total: ${tempoJtRows.length} faktur</strong> — Nominal: <strong>${fmt(tempoJtRows.reduce((s,r) => s + (r.nominal || 0), 0))}</strong>
+            </div>`;
+            
+            document.getElementById('tempoJtContent').innerHTML = html;
+            document.getElementById('tempoJtModal').classList.add('open');
+        }
+
+        function closeTempoJtModal() {
+            document.getElementById('tempoJtModal').classList.remove('open');
+        }
+
         // ---- Modal Faktur ----
         function openFakturModal(faktur) {
             buildLastPayMap();
@@ -2703,20 +2779,27 @@
             for (const r of rows) {
                 const name = (r.produk || '').trim() || '—';
                 if (!map[name]) {
-                    map[name] = { produk: name, qty: 0, totalJual: 0, totalHpp: 0, hjSum: 0, hbSum: 0, hjCnt: 0 };
+                    map[name] = { produk: name, qty: 0, totalJual: 0, totalHpp: 0, hjPrices: [], hbSum: 0, hjCnt: 0 };
                 }
                 const g = map[name];
                 const qty = r.jumlah || 0;
                 g.qty += qty;
                 g.totalJual += r.total || 0;
                 g.totalHpp += (r.hargaBeli || 0) * qty;
-                if (r.hargaJual) { g.hjSum += r.hargaJual;
-                    g.hjCnt++; }
+                if (r.hargaJual) { 
+                    g.hjPrices.push(r.hargaJual);
+                    g.hjCnt++; 
+                }
                 if (r.hargaBeli) { g.hbSum += r.hargaBeli; }
             }
             const list = Object.values(map).sort((a, b) => a.produk.localeCompare(b.produk));
             lastProfitProdukRows = list.map(g => {
-                const hargaJual = g.hjCnt ? Math.round(g.hjSum / g.hjCnt) : 0;
+                let hargaJual = 0;
+                if (g.hjCnt > 0) {
+                    const minHj = Math.min(...g.hjPrices);
+                    const maxHj = Math.max(...g.hjPrices);
+                    hargaJual = minHj === maxHj ? minHj : { min: minHj, max: maxHj, isRange: true };
+                }
                 const hargaBeli = g.qty ? Math.round(g.totalHpp / g.qty) : 0;
                 const profit = g.totalJual - g.totalHpp;
                 return { produk: g.produk, qty: g.qty, totalPenjualan: g.totalJual, totalHpp: g.totalHpp, hargaJual,
@@ -2738,13 +2821,16 @@
                 sumJual += r.totalPenjualan;
                 sumHpp += r.totalHpp;
                 sumProfit += r.profit;
+                const hjDisplay = typeof r.hargaJual === 'object' && r.hargaJual.isRange 
+                    ? fmt(r.hargaJual.max) + ' - ' + fmt(r.hargaJual.min)
+                    : fmt(r.hargaJual);
                 return '<tr>' +
                     '<td>' + (i + 1) + '</td>' +
                     '<td>' + esc(r.produk) + '</td>' +
                     '<td class="num">' + r.qty.toLocaleString('id-ID') + '</td>' +
                     '<td class="num">' + fmt(r.totalPenjualan) + '</td>' +
                     '<td class="num">' + fmt(r.totalHpp) + '</td>' +
-                    '<td class="num">' + fmt(r.hargaJual) + '</td>' +
+                    '<td class="num">' + hjDisplay + '</td>' +
                     '<td class="num">' + fmt(r.hargaBeli) + '</td>' +
                     '<td class="num"><strong>' + fmt(r.profit) + '</strong></td>' +
                     '</tr>';
@@ -4202,6 +4288,12 @@
                 document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
                 document.getElementById('cekCard3').textContent = nCash.toLocaleString('id-ID');
                 document.getElementById('cekCard4').textContent = nTempoOd.toLocaleString('id-ID');
+                
+                // Buat kartu Tempo Sudah JT clickable
+                const cekCard4 = document.querySelector('[id="cekCard4"]').parentElement;
+                cekCard4.classList.add('clickable');
+                cekCard4.style.cursor = 'pointer';
+                cekCard4.onclick = () => openTempoJtModal(rows);
             } else {
                 document.getElementById('cekCard1Label').textContent = 'Jml Faktur Dropping';
                 document.getElementById('cekCard2Label').textContent = 'Nominal Dropping';
@@ -5243,6 +5335,7 @@
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
             openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
+            openTempoJtModal, closeTempoJtModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
             downloadCurrentSalesExcel, clearSalesData, toggleSalesDlMenu, closeSalesDlMenu,
