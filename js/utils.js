@@ -248,20 +248,77 @@ export function normalizeSearchText(v) {
  * setiap kata pada query harus ditemukan di SALAH SATU field (bisa beda
  * field untuk tiap kata), sehingga "RAJU KARANGSAMBUNG" bisa cocok walau
  * "RAJU" ada di kolom SALES dan "KARANGSAMBUNG" ada di kolom ALAMAT.
+ *
+ * Opsional: kalau `row` + `cacheKey` diberikan, hasil normalisasi field
+ * (bagian paling mahal — NFD normalize + regex) di-cache langsung di objek
+ * baris (`row.__searchBlobs[cacheKey]`) supaya pencarian berikutnya pada
+ * baris yang sama tidak menghitung ulang dari nol. Ini penting untuk
+ * dataset besar (puluhan ribu baris) — tanpa cache, tiap kali user
+ * menekan Enter, seluruh dataset dinormalisasi ulang dan bisa bikin UI
+ * freeze sesaat. Cache otomatis "hilang" saat data di-reparse karena
+ * objek baris yang baru tidak punya properti ini.
  * @param {string} query
  * @param {Array<*>} fields
+ * @param {object} [row] Baris asal fields, untuk cache (opsional).
+ * @param {string} [cacheKey] Kunci cache unik per konteks pencarian (mis. 'faktur', 'sales', 'cek').
  * @returns {boolean}
  */
-export function flexibleSearchMatch(query, fields) {
+export function flexibleSearchMatch(query, fields, row, cacheKey) {
     const q = normalizeSearchText(query);
     if (!q) return true;
-    const fieldValues = (fields || [])
-        .filter(v => v != null && String(v).trim() !== '')
-        .map(v => normalizeSearchText(v));
+
+    let blob;
+    if (row && cacheKey) {
+        if (!row.__searchBlobs) row.__searchBlobs = {};
+        blob = row.__searchBlobs[cacheKey];
+        if (blob === undefined) {
+            blob = (fields || [])
+                .filter(v => v != null && String(v).trim() !== '')
+                .map(v => normalizeSearchText(v))
+                .join(' ');
+            row.__searchBlobs[cacheKey] = blob;
+        }
+    } else {
+        blob = (fields || [])
+            .filter(v => v != null && String(v).trim() !== '')
+            .map(v => normalizeSearchText(v))
+            .join(' ');
+    }
+
     const tokens = q.split(' ').filter(Boolean);
-    return tokens.every(token =>
-        fieldValues.some(field => field.includes(token))
-    );
+    return tokens.every(token => blob.includes(token));
+}
+
+/**
+ * Filter array besar tanpa nge-freeze UI: proses per-chunk, dan kasih
+ * kesempatan browser "bernapas" (render/scroll/input) di antara chunk lewat
+ * requestIdleCallback (fallback setTimeout kalau tidak didukung, mis. Safari).
+ * Dataset kecil (<= chunkSize) langsung diproses sinkron tanpa overhead.
+ * @param {Array<*>} arr
+ * @param {(item:*, index:number) => boolean} predicate
+ * @param {number} [chunkSize] Jumlah baris diproses per "napas". Default 3000.
+ * @returns {Promise<Array<*>>}
+ */
+export function chunkedFilter(arr, predicate, chunkSize = 3000) {
+    if (!arr || arr.length <= chunkSize) {
+        return Promise.resolve((arr || []).filter(predicate));
+    }
+    return new Promise(resolve => {
+        const result = [];
+        let i = 0;
+        const scheduleNext = (typeof requestIdleCallback === 'function')
+            ? (cb) => requestIdleCallback(cb)
+            : (cb) => setTimeout(() => cb({ timeRemaining: () => 0 }), 0);
+        function step() {
+            const end = Math.min(i + chunkSize, arr.length);
+            for (; i < end; i++) {
+                if (predicate(arr[i], i)) result.push(arr[i]);
+            }
+            if (i < arr.length) scheduleNext(step);
+            else resolve(result);
+        }
+        scheduleNext(step);
+    });
 }
 
 /**
