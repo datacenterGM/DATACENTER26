@@ -1890,11 +1890,12 @@
             const nominal = Number(row.nominal) || 0;
             const paid = Number(row.paidAmount) || 0;
             const sisa = Math.max(0, nominal - paid);
-            const today = new Date();
             const due = row.jatuhTempo instanceof Date && !isNaN(row.jatuhTempo) ? row.jatuhTempo : null;
-            const overdueDays = due ? Math.max(0, daysBetween(due, today)) : 0;
-            const sudahJT = !!(due && overdueDays > 0);
-            const isTitip = row.statusCek === 'Titip' || (paid > 0 && !row.paid);
+            // isOverdue & paymentStatus sudah dihitung sekali di buildCekFakturList
+            // (satu sumber logika untuk tabel, kartu, filter, dan modal ini).
+            const overdueDays = Number(row.umurOverdue) || 0;
+            const sudahJT = !!row.isOverdue;
+            const isTitip = row.statusCek === 'Titip' || row.paymentStatus === 'Titip';
             const isLunas = row.statusCek === 'Lunas';
             const dateCheck = row.dateAnomaly ? { anomaly: true, reason: row.dateAnomalyReason || 'Tanggal jatuh tempo tidak sesuai.', expectedDue: row.dateExpectedDue } : validateCekTempoDate(row);
             const dateAnomaly = !!dateCheck.anomaly;
@@ -3680,22 +3681,30 @@
                     g.jatuhTempo = due;
                     g.jatuhTempoStr = due ? fmtDateID(due) : '—';
                     applyCekTempoDateValidation(g);
-                    if (g.paid) {
+                    // paymentStatus & isOverdue dipisah sebagai dua dimensi independen,
+                    // supaya faktur bayar-sebagian-tapi-lewat-jatuh-tempo tidak "hilang"
+                    // dari kelompok Titip hanya karena sudah lewat jatuh tempo.
+                    const isLunas = g.paid;
+                    const isTitipPembayaran = !isLunas && (hasTitip || paidAmount > 0);
+                    g.paymentStatus = isLunas ? 'Lunas' : (isTitipPembayaran ? 'Titip' : 'Belum Bayar');
+                    g.isOverdue = !isLunas && !!(due && daysBetween(due, today) > 0);
+                    g.umurOverdue = g.isOverdue ? daysBetween(due, today) : 0;
+                    g.umurOverdueStr = g.isOverdue ? g.umurOverdue + ' hari' : '—';
+
+                    // statusCek dipertahankan untuk kompatibilitas dengan kode lain
+                    // (filter/kartu/export) yang masih membaca field ini.
+                    // Prioritas: Lunas > Titip > Overdue murni > Belum Jatuh Tempo.
+                    // "Overdue" di sini KHUSUS untuk faktur yang belum dibayar sama sekali
+                    // dan lewat jatuh tempo; faktur Titip yang overdue tetap masuk 'Titip'
+                    // dan status overdue-nya dibaca lewat g.isOverdue / g.umurOverdue.
+                    if (isLunas) {
                         g.statusCek = 'Lunas';
-                        g.umurOverdue = 0;
-                        g.umurOverdueStr = '—';
-                    } else if (due && daysBetween(due, today) > 0) {
-                        g.statusCek = 'Overdue';
-                        g.umurOverdue = daysBetween(due, today);
-                        g.umurOverdueStr = g.umurOverdue + ' hari';
-                    } else if (hasTitip || paidAmount > 0) {
+                    } else if (isTitipPembayaran) {
                         g.statusCek = 'Titip';
-                        g.umurOverdue = 0;
-                        g.umurOverdueStr = '—';
+                    } else if (g.isOverdue) {
+                        g.statusCek = 'Overdue';
                     } else {
                         g.statusCek = 'Belum Jatuh Tempo';
-                        g.umurOverdue = 0;
-                        g.umurOverdueStr = '—';
                     }
                     if (!g.month) g.month = monthNameFromDate(g.tglDate) || 'Lainnya';
                     out.push(g);
@@ -3703,8 +3712,8 @@
             }
             out.sort((a, b) => {
                 if (payType === 'TEMPO') {
-                    if (a.statusCek === 'Overdue' && b.statusCek !== 'Overdue') return -1;
-                    if (b.statusCek === 'Overdue' && a.statusCek !== 'Overdue') return 1;
+                    if (a.isOverdue && !b.isOverdue) return -1;
+                    if (b.isOverdue && !a.isOverdue) return 1;
                     if ((a.umurOverdue || 0) !== (b.umurOverdue || 0)) return (b.umurOverdue || 0) - (a.umurOverdue ||
                         0);
                 }
@@ -3740,7 +3749,7 @@
                         '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
                         '<td>' + esc(r.jatuhTempoStr) + '</td>' +
                         '<td>' + statusBadgeCek(r) + '</td>' +
-                        '<td class="num">' + (r.statusCek === 'Overdue' ? ('<strong style="color:var(--red)">' + esc(
+                        '<td class="num">' + (r.isOverdue ? ('<strong style="color:var(--red)">' + esc(
                             r.umurOverdueStr) + '</strong>') : '—') + '</td>' +
                         '<td class="num">' + (r.paidAmount ? r.paidAmount.toLocaleString('id-ID') : '—') + '</td>' +
                         '<td class="muted">' + esc(r.alamat) + '</td>' +
@@ -4138,11 +4147,11 @@
                     'Umur Overdue (hari)', 'Sudah Bayar', 'Alamat', 'Pembayaran'
                 ]);
                 rows.forEach(r => {
-                    const st = r.statusCek === 'Overdue' ? ('OVERDUE ' + r.umurOverdue + ' hr') : r.statusCek;
+                    const st = r.isOverdue ? (r.statusCek.toUpperCase() + ' · OVERDUE ' + r.umurOverdue + ' hr') : r.statusCek;
                     aoa.push([
                         r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
                         r.jatuhTempoStr, st,
-                        r.statusCek === 'Overdue' ? r.umurOverdue : '',
+                        r.isOverdue ? r.umurOverdue : '',
                         r.paidAmount || 0, r.alamat || '', r.pembayaran || 'Tempo'
                     ]);
                 });
