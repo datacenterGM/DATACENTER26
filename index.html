@@ -487,6 +487,24 @@
         @media (max-width:768px) { #cekCards.show { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } #cekCards.show .sc-label { font-size: 0.56rem; } #cekCards.show .sc-value { font-size: 0.82rem; } }
         @media (max-width:420px) { .container { padding: 8px; } .brand h1 { font-size: 0.85rem; } .tab-btn { font-size: 0.7rem; } #salesCards.show { grid-template-columns: 1fr !important; } .scard .sc-value { font-size: 0.9rem; } .modal { margin: 5px; } }
     </style>
+
+<style>
+/* ===== Status transaksi BATAL ===== */
+.sales-row-batal td { opacity: .72; }
+.sales-row-batal td.faktur { text-decoration: none; }
+.sales-batal-badge { display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:2px 7px; border-radius:999px; font-size:.68rem; font-weight:800; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; vertical-align:middle; white-space:nowrap; }
+.sales-faktur-link { color:var(--accent); font-weight:700; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+.sales-faktur-link:hover { opacity:.82; }
+.sales-batal-note { margin-top:10px; padding:10px 12px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(220,38,38,.25); color:var(--red); font-size:.82rem; }
+.sales-detail-items { max-height:260px; overflow:auto; border:1px solid var(--border); border-radius:9px; }
+.sales-detail-items table { width:100%; border-collapse:collapse; font-size:.8rem; }
+.sales-detail-items th, .sales-detail-items td { padding:7px 9px; border-bottom:1px solid var(--border); }
+.sales-detail-items th { position:sticky; top:0; background:var(--card); text-align:left; z-index:1; }
+.sales-detail-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; flex-wrap:wrap; }
+.sales-detail-btn-batal { background:var(--red); color:#fff; border:0; border-radius:8px; padding:9px 13px; font-weight:700; cursor:pointer; }
+.sales-detail-btn-batal:hover { opacity:.9; }
+.sales-detail-btn-batal:disabled { opacity:.55; cursor:not-allowed; }
+</style>
 </head>
 <body>
 
@@ -918,6 +936,24 @@
         </div>
 
 
+
+<!-- Modal detail transaksi Data Penjualan -->
+<div class="modal-backdrop" id="salesDetailModal" onclick="if(event.target===this)closeSalesDetailModal()">
+  <div class="modal" style="max-width:980px;">
+    <div class="modal-h">
+      <div><h2 id="salesDetailModalTitle">Detail Transaksi</h2><div class="sub" id="salesDetailModalSub">—</div></div>
+      <button class="modal-close" onclick="closeSalesDetailModal()">Tutup</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-stats" id="salesDetailModalStats"></div>
+      <div id="salesDetailModalStatus" style="margin:10px 0 12px;"></div>
+      <div class="sales-detail-items" id="salesDetailModalItems"></div>
+      <div id="salesDetailModalBatalInfo"></div>
+      <div class="sales-detail-actions" id="salesDetailModalActions"></div>
+    </div>
+  </div>
+</div>
+
         <footer>DATACENTER · Mode terang / gelap · Upload Excel</footer>
     </div>
 
@@ -948,6 +984,16 @@
         // ---- Global state ----
         let allRows = [];
         let salesRows = [];
+
+        // Transaksi BATAL tetap disimpan di Data Penjualan, tetapi dikeluarkan
+        // dari seluruh perhitungan aktif dan dari Cek Data/Anomali.
+        function isSalesBatal(r) {
+            return !!(r && (r.statusBatal === true || String(r.statusBatal || '').toUpperCase() === 'BATAL' || r.batal === true));
+        }
+        function activeSalesRows(rows) {
+            return (rows || []).filter(r => !isSalesBatal(r));
+        }
+
         // Catatan: data tab Rapikan TIDAK disimpan di variabel module-level di
         // sini. Tab Rapikan pakai `cleanRows` miliknya sendiri di dalam IIFE-nya
         // dan menjembataninya lewat window.cleanRows / window.__rapGetCleanRows /
@@ -2117,6 +2163,58 @@
             document.getElementById('tempoJtModal').classList.remove('open');
         }
 
+        // ---- Modal detail & aksi BATAL untuk Data Penjualan ----
+        function openSalesDetailModal(faktur) {
+            const fk = String(faktur || '').trim();
+            const rows = salesRows.filter(r => String(r.noFaktur || '').trim() === fk);
+            if (!rows.length) return;
+            const first = rows.slice().sort((a,b) => (parseSalesDate(a.tanggal)?.getTime() || 0) - (parseSalesDate(b.tanggal)?.getTime() || 0))[0];
+            const total = rows.reduce((sum,r) => sum + (Number(r.total) || 0), 0);
+            const qty = rows.reduce((sum,r) => sum + (Number(r.jumlah) || 0), 0);
+            const batal = rows.some(isSalesBatal);
+            const alasan = rows.find(r => r.batalReason)?.batalReason || rows.find(r => r.batalAlasan)?.batalAlasan || '';
+            const batalAt = rows.find(r => r.batalAt)?.batalAt || '';
+            document.getElementById('salesDetailModalTitle').textContent = 'Detail Transaksi ' + fk;
+            document.getElementById('salesDetailModalSub').textContent = (first.customer || '—') + (first.alamat ? ' · ' + first.alamat : '');
+            document.getElementById('salesDetailModalStats').innerHTML =
+                '<div class="modal-stat"><div class="l">Tanggal</div><div class="v">' + esc(first.tanggal || '—') + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Sales</div><div class="v">' + esc(first.sales || '—') + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Qty</div><div class="v">' + qty.toLocaleString('id-ID') + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Total Penjualan</div><div class="v">' + fmt(total) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Pembayaran</div><div class="v">' + esc(first.pembayaran || '—') + '</div></div>';
+            document.getElementById('salesDetailModalStatus').innerHTML = batal ? '<span class="badge badge-retur">🔴 BATAL</span>' : '<span class="badge badge-lunas" style="background:var(--accent-soft);color:var(--accent);">AKTIF</span>';
+            document.getElementById('salesDetailModalItems').innerHTML = '<table><thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Harga Jual</th><th class="num">Disc</th><th class="num">Total</th></tr></thead><tbody>' +
+                rows.map(r => '<tr' + (isSalesBatal(r) ? ' style="opacity:.65;"' : '') + '><td>' + esc(r.produk || '—') + '</td><td class="num">' + (Number(r.jumlah)||0).toLocaleString('id-ID') + '</td><td class="num">' + fmt(r.hargaJual) + '</td><td class="num">' + fmt(r.disc) + '</td><td class="num">' + fmt(r.total) + '</td></tr>').join('') + '</tbody></table>';
+            document.getElementById('salesDetailModalBatalInfo').innerHTML = batal ? '<div class="sales-batal-note"><b>🔴 TRANSAKSI BATAL</b><br>' + (alasan ? 'Alasan: ' + esc(alasan) + '<br>' : '') + (batalAt ? 'Dibatalkan: ' + esc(batalAt) : '') + '<br>Transaksi tetap tersimpan sebagai riwayat dan tidak dihitung dalam penjualan/profit maupun Cek Data.</div>' : '';
+            document.getElementById('salesDetailModalActions').innerHTML = batal ? '' : '<button class="btn btn-outline" onclick="closeSalesDetailModal()">Tutup</button><button class="sales-detail-btn-batal" onclick="confirmSalesBatal(\'' + esc(fk).replace(/'/g, "\\'") + '\')">⚠ Transaksi Batal</button>';
+            document.getElementById('salesDetailModal').classList.add('open');
+        }
+
+        function closeSalesDetailModal() {
+            const m = document.getElementById('salesDetailModal');
+            if (m) m.classList.remove('open');
+        }
+
+        function confirmSalesBatal(faktur) {
+            const fk = String(faktur || '').trim();
+            const rows = salesRows.filter(r => String(r.noFaktur || '').trim() === fk);
+            if (!rows.length || rows.some(isSalesBatal)) return;
+            const alasan = prompt('Alasan transaksi dibatalkan (boleh dikosongkan):', '');
+            if (alasan === null) return;
+            const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+            for (const r of salesRows) {
+                if (String(r.noFaktur || '').trim() !== fk) continue;
+                r.statusBatal = true;
+                r.batalAt = now;
+                r.batalReason = String(alasan || '').trim();
+            }
+            invalidateSalesIndex();
+            saveRowsToDBAndSync(salesRows, DB_KEY_SALES);
+            populateSalesFilters();
+            closeSalesDetailModal();
+            doSalesSearch();
+        }
+
         // ---- Modal Faktur ----
         function openFakturModal(faktur) {
             buildLastPayMap();
@@ -2463,6 +2561,7 @@
             if (!salesFakturMapDirty) return salesFakturMap;
             const map = new Map();
             for (const r of salesRows) {
+                if (isSalesBatal(r)) continue;
                 const fk = String(r.noFaktur || '').trim();
                 if (!fk) continue;
                 if (!map.has(fk)) {
@@ -2507,12 +2606,15 @@
                 .trim()] : null) : null;
             const nomCell = r._showNomFaktur ? ('<td class="num"><strong>' + fmt(nomFaktur) + '</strong></td>') :
                 '<td class="num"></td>';
-            return '<tr>' +
+            const batal = isSalesBatal(r);
+            const fakturCell = '<span class="sales-faktur-link" onclick="openSalesDetailModal(\'' + esc(String(r.noFaktur || '')).replace(/'/g, "\\'") + '\')" title="Klik untuk melihat detail transaksi">' + esc(r.noFaktur || '—') + '</span>' +
+                (batal ? '<span class="sales-batal-badge">🔴 BATAL</span>' : '');
+            return '<tr' + (batal ? ' class="sales-row-batal"' : '') + '>' +
                 '<td>' + esc(r.tanggal) + '<br><span class="muted" style="font-size:0.7rem">' + esc(r.sheet) +
                 '</span></td>' +
-                '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
+                '<td class="faktur">' + fakturCell + '</td>' +
                 '<td>' + esc(r.produk) + '</td>' +
-                '<td class="num">' + r.jumlah.toLocaleString('id-ID') + '</td>' +
+                '<td class="num">' + (Number(r.jumlah) || 0).toLocaleString('id-ID') + '</td>' +
                 '<td>' + esc(r.satuan) + '</td>' +
                 '<td class="num">' + fmt(r.hargaJual) + '</td>' +
                 '<td class="num">' + fmt(r.disc) + '</td>' +
@@ -2677,6 +2779,7 @@
         }
 
         function renderRingkasan(rows) {
+            rows = activeSalesRows(rows);
             const fitriRows = rows.filter(r => isFitriProduk(r.produk));
             const rupaRows = rows.filter(r => !isFitriProduk(r.produk));
             const pivotFitriFull = buildRingkasanPivot(fitriRows);
@@ -2712,8 +2815,9 @@
         }
 
         function updateSalesCards(rows) {
+            rows = activeSalesRows(rows);
             const cards = document.getElementById('salesCards');
-            if (!salesRows.length) { cards.classList.remove('show'); return; }
+            if (!rows.length) { cards.classList.remove('show'); return; }
             cards.classList.add('show');
             let qtyFitriCash = 0,
                 qtyFitriTempo = 0;
@@ -2916,7 +3020,7 @@
             const q = document.getElementById('salesSearchInput').value.trim().toLowerCase();
             const pay = document.getElementById('filterSalesPembayaran').value;
             const sls = document.getElementById('filterSalesSales').value;
-            let filtered = salesRows;
+            let filtered = activeSalesRows(salesRows);
             if (pay !== 'all') filtered = filtered.filter(r => r.pembayaran === pay);
             if (sls !== 'all') filtered = filtered.filter(r => r.sales === sls);
             if (q) {
@@ -2947,10 +3051,10 @@
             }
             lastSalesFiltered = filtered;
             renderSalesTable(filtered);
-            if (currentSalesSub === 'ringkasan') renderRingkasan(filtered);
-            if (currentSalesSub === 'produk') renderProfitProduk(filtered);
-            if (currentSalesSub === 'pay') renderProfitPay(filtered);
-            if (currentSalesSub === 'sales') renderProfitSales(filtered);
+            if (currentSalesSub === 'ringkasan') renderRingkasan(activeSalesRows(filtered));
+            if (currentSalesSub === 'produk') renderProfitProduk(activeSalesRows(filtered));
+            if (currentSalesSub === 'pay') renderProfitPay(activeSalesRows(filtered));
+            if (currentSalesSub === 'sales') renderProfitSales(activeSalesRows(filtered));
             if (currentSalesSub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
         }
 
@@ -2963,10 +3067,10 @@
             document.getElementById('filterSalesSales').value = 'all';
             lastSalesFiltered = salesRows;
             renderSalesTable(salesRows);
-            if (currentSalesSub === 'ringkasan') renderRingkasan(salesRows);
-            if (currentSalesSub === 'produk') renderProfitProduk(salesRows);
-            if (currentSalesSub === 'pay') renderProfitPay(salesRows);
-            if (currentSalesSub === 'sales') renderProfitSales(salesRows);
+            if (currentSalesSub === 'ringkasan') renderRingkasan(activeSalesRows(salesRows));
+            if (currentSalesSub === 'produk') renderProfitProduk(activeSalesRows(salesRows));
+            if (currentSalesSub === 'pay') renderProfitPay(activeSalesRows(salesRows));
+            if (currentSalesSub === 'sales') renderProfitSales(activeSalesRows(salesRows));
             if (currentSalesSub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
         }
 
@@ -3003,11 +3107,12 @@
             document.getElementById('profitSalesWrap').classList.toggle('show', sub === 'sales');
             document.getElementById('profitBulanWrap').classList.toggle('show', sub === 'bulan');
             const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+            const activeRows = activeSalesRows(rows);
             if (sub === 'transaksi') renderSalesTable(rows);
-            if (sub === 'ringkasan') renderRingkasan(rows);
-            if (sub === 'produk') renderProfitProduk(rows);
-            if (sub === 'pay') renderProfitPay(rows);
-            if (sub === 'sales') renderProfitSales(rows);
+            if (sub === 'ringkasan') renderRingkasan(activeRows);
+            if (sub === 'produk') renderProfitProduk(activeRows);
+            if (sub === 'pay') renderProfitPay(activeRows);
+            if (sub === 'sales') renderProfitSales(activeRows);
             if (sub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
             const btnDl = document.getElementById('btnDlProfit');
             const btnDlAll = document.getElementById('btnDlTransAll');
@@ -3036,6 +3141,7 @@
         }
 
         function renderProfitProduk(rows) {
+            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.produk || '').trim() || '—';
@@ -3110,6 +3216,7 @@
         }
 
         function renderProfitPay(rows) {
+            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.produk || '').trim() || '—';
@@ -3181,6 +3288,7 @@
         }
 
         function renderProfitSales(rows) {
+            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.sales || '').trim() || '—';
@@ -3253,6 +3361,7 @@
         }
 
         function renderProfitBulan(rows) {
+            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const bulan = r.month || 'Lainnya';
@@ -3334,7 +3443,7 @@
             const safePeriod = period.replace(/\s+/g, '_');
             let sheetName, aoa, fileName;
             if (currentSalesSub === 'ringkasan') {
-                const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
+                const rows = activeSalesRows(lastSalesFiltered.length ? lastSalesFiltered : salesRows);
                 const fitriRows = rows.filter(r => isFitriProduk(r.produk));
                 const pivot = buildRingkasanPivot(fitriRows);
                 sheetName = 'Ringkasan Fitri';
@@ -3474,7 +3583,8 @@
                         r.customer || '',
                         r.alamat || '',
                         r.pembayaran || '',
-                        r.hargaBeli || 0
+                        r.hargaBeli || 0,
+                        isSalesBatal(r) ? 'BATAL' : 'AKTIF'
                     ]);
                 });
             }
@@ -3948,6 +4058,7 @@
                 // Kelompokkan Data Penjualan per No.Faktur (SEMUA tipe pembayaran, Cash maupun Tempo)
                 const byFaktur = new Map();
                 for (const r of salesRows) {
+                    if (isSalesBatal(r)) continue;
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
                     const pay = String(r.pembayaran || '').trim().toUpperCase();
@@ -4154,6 +4265,7 @@
                 // Agregat dari Data Penjualan (bukan Cash)
                 const byFaktur = new Map();
                 for (const r of salesRows) {
+                    if (isSalesBatal(r)) continue;
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
                     if (isCashPay(r.pembayaran)) continue; // skip Cash murni
@@ -5718,7 +5830,7 @@
         Object.assign(window, {
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
-            openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
+            openFakturModal, closeFakturModal, openSalesDetailModal, closeSalesDetailModal, confirmSalesBatal, openCekTempoDetail, closeCekTempoDetail,
             openTempoJtModal, closeTempoJtModal, openHargaJualModal, closeHargaJualModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
