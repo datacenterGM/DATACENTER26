@@ -126,6 +126,30 @@
         .subtabs.show { display: flex; }
         .subtab-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; line-height: 1.3; box-sizing: border-box; }
         .subtab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .cek-subtab-btn {
+            padding: 9px 18px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 0.82rem;
+            cursor: pointer;
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+        }
+        .cek-subtab-btn:hover { border-color: var(--accent); color: var(--text); transform: translateY(-1px); }
+        .cek-subtab-btn.active {
+            background: var(--accent);
+            background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 65%, #7c3aed) 100%);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent), 0 4px 14px color-mix(in srgb, var(--accent) 40%, transparent);
+        }
+        .cek-subtab-btn.active:hover { transform: none; }
         .subtab-dl { margin-left: auto; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-weight: 600; font-size: 0.72rem; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; line-height: 1.3; box-sizing: border-box; font-family: inherit; }
         .subtab-dl:hover { border-color: var(--accent); color: var(--accent); }
         .subtab-dl-wrap { position: relative; display: inline-flex; margin-left: auto; }
@@ -622,8 +646,8 @@
         <!-- TAB CEK -->
         <div id="tabCek" style="display:none;">
             <div class="subtabs show" id="cekSubtabs" style="display:flex;">
-                <button class="subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
-                <button class="subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
+                <button class="cek-subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
+                <button class="cek-subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
                 <div class="subtab-dl-wrap cek-download-wrap" id="cekDownloadWrap">
                     <button type="button" class="subtab-dl" id="cekDownloadBtn" onclick="toggleCekDownloadMenu(event)">📥 Download ▾</button>
                     <div class="subtab-dl-menu" id="cekDownloadMenu">
@@ -673,9 +697,7 @@
             </div>
 
             <div style="margin:-4px 0 10px;color:var(--muted);font-size:0.78rem;">
-                💡 <b>Crosscheck sekarang berdasarkan UANG YANG BENAR-BENAR MASUK</b>, bukan nominal faktur.
-                Pembayaran dicocokkan ke faktur Cash/Tempo; No.Faktur salah ketik dicari dengan Customer + Alamat + Sales + Nominal + tanggal.
-                <span id="cekRekonHint" style="display:block;margin-top:4px;font-weight:700;"></span>
+                <span id="cekRekonHint" style="display:block;font-weight:700;"></span>
             </div>
             <div class="result-info" id="cekResultInfo" style="display:block;margin-bottom:8px;color:var(--muted);font-size:0.85rem;"></div>
 
