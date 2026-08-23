@@ -487,31 +487,6 @@
         @media (max-width:768px) { #cekCards.show { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } #cekCards.show .sc-label { font-size: 0.56rem; } #cekCards.show .sc-value { font-size: 0.82rem; } }
         @media (max-width:420px) { .container { padding: 8px; } .brand h1 { font-size: 0.85rem; } .tab-btn { font-size: 0.7rem; } #salesCards.show { grid-template-columns: 1fr !important; } .scard .sc-value { font-size: 0.9rem; } .modal { margin: 5px; } }
     </style>
-
-<style>
-/* ===== Status transaksi BATAL ===== */
-.sales-row-batal td { opacity: .72; }
-.sales-row-batal td.faktur { text-decoration: none; }
-.sales-batal-badge { display:inline-flex; align-items:center; gap:4px; margin-left:6px; padding:2px 7px; border-radius:999px; font-size:.68rem; font-weight:800; color:#991b1b; background:#fee2e2; border:1px solid #fecaca; vertical-align:middle; white-space:nowrap; }
-.sales-faktur-link { color:var(--accent); font-weight:700; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
-.sales-faktur-link:hover { opacity:.82; }
-.sales-batal-note { margin-top:10px; padding:10px 12px; border-radius:9px; background:var(--red-bg); border:1px solid rgba(220,38,38,.25); color:var(--red); font-size:.82rem; }
-.sales-detail-items { max-height:260px; overflow:auto; border:1px solid var(--border); border-radius:9px; }
-.sales-detail-items table { width:100%; border-collapse:collapse; font-size:.8rem; }
-.sales-detail-items th, .sales-detail-items td { padding:7px 9px; border-bottom:1px solid var(--border); }
-.sales-detail-items th { position:sticky; top:0; background:var(--card); text-align:left; z-index:1; }
-.sales-detail-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; flex-wrap:wrap; }
-.sales-detail-btn-batal { background:var(--red); color:#fff; border:0; border-radius:8px; padding:9px 13px; font-weight:700; cursor:pointer; }
-.sales-detail-btn-batal:hover { opacity:.9; }
-.sales-detail-btn-batal:disabled { opacity:.55; cursor:not-allowed; }
-
-        /* Cek Data: virtual-row height harus stabil agar tidak muncul jeda kosong.
-           Isi sel dibuat satu baris; detail lengkap tetap tersedia lewat modal/search. */
-        #cekTableWrap table tbody td { white-space: nowrap; vertical-align: middle; }
-        #cekTableWrap table tbody td.toko, #cekTableWrap table tbody td.muted {
-            max-width: 240px; overflow: hidden; text-overflow: ellipsis;
-        }
-</style>
 </head>
 <body>
 
@@ -653,9 +628,9 @@
                 <button class="subtab-btn active" id="subBtnRingkasan" onclick="switchSalesSub('ringkasan')">📊 Ringkasan</button>
                 <button class="subtab-btn" id="subBtnTransaksi" onclick="switchSalesSub('transaksi')">📋 Transaksi</button>
                 <button class="subtab-btn" id="subBtnProduk" onclick="switchSalesSub('produk')">📦 Profit Per Produk</button>
-                <button class="subtab-btn" id="subBtnSalesProduk" onclick="switchSalesSub('salesproduk')">📦👤 Per Sales Per Produk</button>
                 <button class="subtab-btn" id="subBtnPay" onclick="switchSalesSub('pay')">💳 Profit Per Produk Per Pembayaran</button>
                 <button class="subtab-btn" id="subBtnSales" onclick="switchSalesSub('sales')">👤 Profit Per Sales</button>
+                <button class="subtab-btn" id="subBtnSalesProduk" onclick="switchSalesSub('salesProduk')">📦👤 Per Sales Per Produk</button>
                 <button class="subtab-btn" id="subBtnBulan" onclick="switchSalesSub('bulan')">🗓️ Profit Per Bulan</button>
                 <div class="view-toggle" id="salesViewToggle" style="display:none;">
                     <button type="button" class="view-toggle-btn active" id="btnViewTable" onclick="setSalesViewMode('table')">☰ Tabel</button>
@@ -708,9 +683,9 @@
             </div>
 
             <div class="profit-wrap" id="profitProdukWrap"><div class="profit-head"><span>PROFIT PENJUALAN / PRODUK</span><span class="muted" id="profitProdukPeriod">—</span></div><table class="profit-table"><thead><tr><th>No</th><th>Produk</th><th class="num">Qty</th><th class="num">Total Penjualan</th><th class="num">Total HPP</th><th class="num">Harga Jual</th><th class="num">Harga Beli</th><th class="num">Profit</th></tr></thead><tbody id="profitProdukBody"></tbody></table></div>
-            <div class="profit-wrap" id="salesProdukWrap"><div class="profit-head"><span>PER SALES PER PRODUK</span><span class="muted" id="salesProdukPeriod">—</span><button class="subtab-dl" style="margin-left:auto" onclick="downloadSalesProdukExcel()">⬇ Excel</button></div><div class="table-wrap" style="max-height:65vh;overflow:auto"><table class="profit-table"><thead id="salesProdukHead"></thead><tbody id="salesProdukBody"></tbody></table></div></div>
             <div class="profit-wrap" id="profitPayWrap"><div class="profit-head"><span>PROFIT PER PRODUK PER PEMBAYARAN</span><span class="muted" id="profitPayPeriod">—</span></div><table class="profit-table"><thead><tr><th>Produk</th><th class="num">Nominal Penjualan Cash</th><th class="num">Nominal Penjualan Tempo</th><th class="num">Profit Tempo</th><th class="num">Profit Cash</th><th class="num">Total Nominal Penjualan</th><th class="num">Total Profit</th></tr></thead><tbody id="profitPayBody"></tbody></table></div>
             <div class="profit-wrap" id="profitSalesWrap"><div class="profit-head"><span>PROFIT PER SALES</span><span class="muted" id="profitSalesPeriod">—</span></div><table class="profit-table"><thead><tr><th>No</th><th>Sales</th><th class="num">Qty Fitri</th><th class="num">Qty Rupa Rupa</th><th class="num">Nominal Fitri</th><th class="num">Nominal Rupa Rupa</th><th class="num">Profit Fitri</th><th class="num">Profit Rupa Rupa</th><th class="num">Total Profit</th></tr></thead><tbody id="profitSalesBody"></tbody></table></div>
+            <div class="profit-wrap" id="profitSalesProdukWrap"><div class="profit-head"><span>PER SALES PER PRODUK</span><span class="muted" id="profitSalesProdukPeriod">—</span></div><div style="overflow-x:auto"><table class="profit-table" id="profitSalesProdukTable"><thead id="profitSalesProdukHead"></thead><tbody id="profitSalesProdukBody"></tbody></table></div></div>
             <div class="profit-wrap" id="profitBulanWrap"><div class="profit-head"><span>PROFIT PER BULAN</span><span class="muted" id="profitBulanPeriod">—</span></div><table class="profit-table"><thead><tr><th>Bulan</th><th class="num">Total Qty Fitri</th><th class="num">Total Qty Rupa2</th><th class="num">Totl Nominl Fitri</th><th class="num">Total Nominal Rupa2</th><th class="num">Totl HPP</th><th class="num">Profit</th><th class="num">Margin</th></tr></thead><tbody id="profitBulanBody"></tbody></table></div>
 
             <div class="empty-state" id="salesEmptyState" style="display:none;">
@@ -945,24 +920,6 @@
         </div>
 
 
-
-<!-- Modal detail transaksi Data Penjualan -->
-<div class="modal-backdrop" id="salesDetailModal" onclick="if(event.target===this)closeSalesDetailModal()">
-  <div class="modal" style="max-width:980px;">
-    <div class="modal-h">
-      <div><h2 id="salesDetailModalTitle">Detail Transaksi</h2><div class="sub" id="salesDetailModalSub">—</div></div>
-      <button class="modal-close" onclick="closeSalesDetailModal()">Tutup</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-stats" id="salesDetailModalStats"></div>
-      <div id="salesDetailModalStatus" style="margin:10px 0 12px;"></div>
-      <div class="sales-detail-items" id="salesDetailModalItems"></div>
-      <div id="salesDetailModalBatalInfo"></div>
-      <div class="sales-detail-actions" id="salesDetailModalActions"></div>
-    </div>
-  </div>
-</div>
-
         <footer>DATACENTER · Mode terang / gelap · Upload Excel</footer>
     </div>
 
@@ -982,7 +939,7 @@
             addDays, daysBetween, fmtDateID, MONTH_ORDER, monthNameFromDate,
             currentMonthName, preferredMonth, detectMonth, statusBadge,
             sectionBadge, statusBadgeCek, normalizeSearchText, flexibleSearchMatch,
-            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, cekFakturSimilarity, latestPaymentSnapshot, cekPaymentReferenceAmount, chunkedFilter, yieldToMain
+            normCekText, normCekTokens, cekTextSimilar, cekAmountScore, cekFakturSimilarity, chunkedFilter, yieldToMain
         } from './js/utils.js';
         import {
             DB_NAME, DB_VERSION, DB_STORE, DB_KEY, DB_KEY_SALES, DB_KEY_RAPIKAN,
@@ -993,16 +950,6 @@
         // ---- Global state ----
         let allRows = [];
         let salesRows = [];
-
-        // Transaksi BATAL tetap disimpan di Data Penjualan, tetapi dikeluarkan
-        // dari seluruh perhitungan aktif dan dari Cek Data/Anomali.
-        function isSalesBatal(r) {
-            return !!(r && (r.statusBatal === true || String(r.statusBatal || '').toUpperCase() === 'BATAL' || r.batal === true));
-        }
-        function activeSalesRows(rows) {
-            return (rows || []).filter(r => !isSalesBatal(r));
-        }
-
         // Catatan: data tab Rapikan TIDAK disimpan di variabel module-level di
         // sini. Tab Rapikan pakai `cleanRows` miliknya sendiri di dalam IIFE-nya
         // dan menjembataninya lewat window.cleanRows / window.__rapGetCleanRows /
@@ -2172,58 +2119,6 @@
             document.getElementById('tempoJtModal').classList.remove('open');
         }
 
-        // ---- Modal detail & aksi BATAL untuk Data Penjualan ----
-        function openSalesDetailModal(faktur) {
-            const fk = String(faktur || '').trim();
-            const rows = salesRows.filter(r => String(r.noFaktur || '').trim() === fk);
-            if (!rows.length) return;
-            const first = rows.slice().sort((a,b) => (parseSalesDate(a.tanggal)?.getTime() || 0) - (parseSalesDate(b.tanggal)?.getTime() || 0))[0];
-            const total = rows.reduce((sum,r) => sum + (Number(r.total) || 0), 0);
-            const qty = rows.reduce((sum,r) => sum + (Number(r.jumlah) || 0), 0);
-            const batal = rows.some(isSalesBatal);
-            const alasan = rows.find(r => r.batalReason)?.batalReason || rows.find(r => r.batalAlasan)?.batalAlasan || '';
-            const batalAt = rows.find(r => r.batalAt)?.batalAt || '';
-            document.getElementById('salesDetailModalTitle').textContent = 'Detail Transaksi ' + fk;
-            document.getElementById('salesDetailModalSub').textContent = (first.customer || '—') + (first.alamat ? ' · ' + first.alamat : '');
-            document.getElementById('salesDetailModalStats').innerHTML =
-                '<div class="modal-stat"><div class="l">Tanggal</div><div class="v">' + esc(first.tanggal || '—') + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Sales</div><div class="v">' + esc(first.sales || '—') + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Qty</div><div class="v">' + qty.toLocaleString('id-ID') + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Total Penjualan</div><div class="v">' + fmt(total) + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Pembayaran</div><div class="v">' + esc(first.pembayaran || '—') + '</div></div>';
-            document.getElementById('salesDetailModalStatus').innerHTML = batal ? '<span class="badge badge-retur">🔴 BATAL</span>' : '<span class="badge badge-lunas" style="background:var(--accent-soft);color:var(--accent);">AKTIF</span>';
-            document.getElementById('salesDetailModalItems').innerHTML = '<table><thead><tr><th>Produk</th><th class="num">Qty</th><th class="num">Harga Jual</th><th class="num">Disc</th><th class="num">Total</th></tr></thead><tbody>' +
-                rows.map(r => '<tr' + (isSalesBatal(r) ? ' style="opacity:.65;"' : '') + '><td>' + esc(r.produk || '—') + '</td><td class="num">' + (Number(r.jumlah)||0).toLocaleString('id-ID') + '</td><td class="num">' + fmt(r.hargaJual) + '</td><td class="num">' + fmt(r.disc) + '</td><td class="num">' + fmt(r.total) + '</td></tr>').join('') + '</tbody></table>';
-            document.getElementById('salesDetailModalBatalInfo').innerHTML = batal ? '<div class="sales-batal-note"><b>🔴 TRANSAKSI BATAL</b><br>' + (alasan ? 'Alasan: ' + esc(alasan) + '<br>' : '') + (batalAt ? 'Dibatalkan: ' + esc(batalAt) : '') + '<br>Transaksi tetap tersimpan sebagai riwayat dan tidak dihitung dalam penjualan/profit maupun Cek Data.</div>' : '';
-            document.getElementById('salesDetailModalActions').innerHTML = batal ? '' : '<button class="btn btn-outline" onclick="closeSalesDetailModal()">Tutup</button><button class="sales-detail-btn-batal" onclick="confirmSalesBatal(\'' + esc(fk).replace(/'/g, "\\'") + '\')">⚠ Transaksi Batal</button>';
-            document.getElementById('salesDetailModal').classList.add('open');
-        }
-
-        function closeSalesDetailModal() {
-            const m = document.getElementById('salesDetailModal');
-            if (m) m.classList.remove('open');
-        }
-
-        function confirmSalesBatal(faktur) {
-            const fk = String(faktur || '').trim();
-            const rows = salesRows.filter(r => String(r.noFaktur || '').trim() === fk);
-            if (!rows.length || rows.some(isSalesBatal)) return;
-            const alasan = prompt('Alasan transaksi dibatalkan (boleh dikosongkan):', '');
-            if (alasan === null) return;
-            const now = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-            for (const r of salesRows) {
-                if (String(r.noFaktur || '').trim() !== fk) continue;
-                r.statusBatal = true;
-                r.batalAt = now;
-                r.batalReason = String(alasan || '').trim();
-            }
-            invalidateSalesIndex();
-            saveRowsToDBAndSync(salesRows, DB_KEY_SALES);
-            populateSalesFilters();
-            closeSalesDetailModal();
-            doSalesSearch();
-        }
-
         // ---- Modal Faktur ----
         function openFakturModal(faktur) {
             buildLastPayMap();
@@ -2570,7 +2465,6 @@
             if (!salesFakturMapDirty) return salesFakturMap;
             const map = new Map();
             for (const r of salesRows) {
-                if (isSalesBatal(r)) continue;
                 const fk = String(r.noFaktur || '').trim();
                 if (!fk) continue;
                 if (!map.has(fk)) {
@@ -2615,15 +2509,12 @@
                 .trim()] : null) : null;
             const nomCell = r._showNomFaktur ? ('<td class="num"><strong>' + fmt(nomFaktur) + '</strong></td>') :
                 '<td class="num"></td>';
-            const batal = isSalesBatal(r);
-            const fakturCell = '<span class="sales-faktur-link" onclick="openSalesDetailModal(\'' + esc(String(r.noFaktur || '')).replace(/'/g, "\\'") + '\')" title="Klik untuk melihat detail transaksi">' + esc(r.noFaktur || '—') + '</span>' +
-                (batal ? '<span class="sales-batal-badge">🔴 BATAL</span>' : '');
-            return '<tr' + (batal ? ' class="sales-row-batal"' : '') + '>' +
+            return '<tr>' +
                 '<td>' + esc(r.tanggal) + '<br><span class="muted" style="font-size:0.7rem">' + esc(r.sheet) +
                 '</span></td>' +
-                '<td class="faktur">' + fakturCell + '</td>' +
+                '<td class="faktur">' + esc(r.noFaktur) + '</td>' +
                 '<td>' + esc(r.produk) + '</td>' +
-                '<td class="num">' + (Number(r.jumlah) || 0).toLocaleString('id-ID') + '</td>' +
+                '<td class="num">' + r.jumlah.toLocaleString('id-ID') + '</td>' +
                 '<td>' + esc(r.satuan) + '</td>' +
                 '<td class="num">' + fmt(r.hargaJual) + '</td>' +
                 '<td class="num">' + fmt(r.disc) + '</td>' +
@@ -2643,6 +2534,7 @@
         let lastProfitProdukRows = [];
         let lastProfitPayRows = [];
         let lastProfitSalesRows = [];
+        let lastProfitSalesProdukRows = [];
         let lastProfitBulanRows = [];
         let fakturNominalMap = {};
 
@@ -2788,7 +2680,6 @@
         }
 
         function renderRingkasan(rows) {
-            rows = activeSalesRows(rows);
             const fitriRows = rows.filter(r => isFitriProduk(r.produk));
             const rupaRows = rows.filter(r => !isFitriProduk(r.produk));
             const pivotFitriFull = buildRingkasanPivot(fitriRows);
@@ -2824,9 +2715,8 @@
         }
 
         function updateSalesCards(rows) {
-            rows = activeSalesRows(rows);
             const cards = document.getElementById('salesCards');
-            if (!rows.length) { cards.classList.remove('show'); return; }
+            if (!salesRows.length) { cards.classList.remove('show'); return; }
             cards.classList.add('show');
             let qtyFitriCash = 0,
                 qtyFitriTempo = 0;
@@ -3029,7 +2919,7 @@
             const q = document.getElementById('salesSearchInput').value.trim().toLowerCase();
             const pay = document.getElementById('filterSalesPembayaran').value;
             const sls = document.getElementById('filterSalesSales').value;
-            let filtered = activeSalesRows(salesRows);
+            let filtered = salesRows;
             if (pay !== 'all') filtered = filtered.filter(r => r.pembayaran === pay);
             if (sls !== 'all') filtered = filtered.filter(r => r.sales === sls);
             if (q) {
@@ -3060,10 +2950,10 @@
             }
             lastSalesFiltered = filtered;
             renderSalesTable(filtered);
-            if (currentSalesSub === 'ringkasan') renderRingkasan(activeSalesRows(filtered));
-            if (currentSalesSub === 'produk') renderProfitProduk(activeSalesRows(filtered));
-            if (currentSalesSub === 'pay') renderProfitPay(activeSalesRows(filtered));
-            if (currentSalesSub === 'sales') renderProfitSales(activeSalesRows(filtered));
+            if (currentSalesSub === 'ringkasan') renderRingkasan(filtered);
+            if (currentSalesSub === 'produk') renderProfitProduk(filtered);
+            if (currentSalesSub === 'pay') renderProfitPay(filtered);
+            if (currentSalesSub === 'sales') renderProfitSales(filtered);
             if (currentSalesSub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
         }
 
@@ -3076,10 +2966,11 @@
             document.getElementById('filterSalesSales').value = 'all';
             lastSalesFiltered = salesRows;
             renderSalesTable(salesRows);
-            if (currentSalesSub === 'ringkasan') renderRingkasan(activeSalesRows(salesRows));
-            if (currentSalesSub === 'produk') renderProfitProduk(activeSalesRows(salesRows));
-            if (currentSalesSub === 'pay') renderProfitPay(activeSalesRows(salesRows));
-            if (currentSalesSub === 'sales') renderProfitSales(activeSalesRows(salesRows));
+            if (currentSalesSub === 'ringkasan') renderRingkasan(salesRows);
+            if (currentSalesSub === 'produk') renderProfitProduk(salesRows);
+            if (currentSalesSub === 'pay') renderProfitPay(salesRows);
+            if (currentSalesSub === 'sales') renderProfitSales(salesRows);
+            if (currentSalesSub === 'salesProduk') renderProfitSalesProduk(salesRows);
             if (currentSalesSub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
         }
 
@@ -3088,9 +2979,9 @@
             document.getElementById('subBtnRingkasan').classList.toggle('active', sub === 'ringkasan');
             document.getElementById('subBtnTransaksi').classList.toggle('active', sub === 'transaksi');
             document.getElementById('subBtnProduk').classList.toggle('active', sub === 'produk');
-            document.getElementById('subBtnSalesProduk').classList.toggle('active', sub === 'salesproduk');
             document.getElementById('subBtnPay').classList.toggle('active', sub === 'pay');
             document.getElementById('subBtnSales').classList.toggle('active', sub === 'sales');
+            document.getElementById('subBtnSalesProduk').classList.toggle('active', sub === 'salesProduk');
             document.getElementById('subBtnBulan').classList.toggle('active', sub === 'bulan');
             const viewToggle = document.getElementById('salesViewToggle');
             if (viewToggle) viewToggle.style.display = sub === 'transaksi' ? 'inline-flex' : 'none';
@@ -3113,18 +3004,17 @@
             document.getElementById('ringkasanFitriWrap').classList.toggle('show', sub === 'ringkasan');
             document.getElementById('ringkasanRupaWrap').classList.toggle('show', sub === 'ringkasan');
             document.getElementById('profitProdukWrap').classList.toggle('show', sub === 'produk');
-            document.getElementById('salesProdukWrap').classList.toggle('show', sub === 'salesproduk');
             document.getElementById('profitPayWrap').classList.toggle('show', sub === 'pay');
             document.getElementById('profitSalesWrap').classList.toggle('show', sub === 'sales');
+            document.getElementById('profitSalesProdukWrap').classList.toggle('show', sub === 'salesProduk');
             document.getElementById('profitBulanWrap').classList.toggle('show', sub === 'bulan');
             const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
-            const activeRows = activeSalesRows(rows);
             if (sub === 'transaksi') renderSalesTable(rows);
-            if (sub === 'ringkasan') renderRingkasan(activeRows);
-            if (sub === 'produk') renderProfitProduk(activeRows);
-            if (sub === 'salesproduk') renderSalesProduk(activeRows);
-            if (sub === 'pay') renderProfitPay(activeRows);
-            if (sub === 'sales') renderProfitSales(activeRows);
+            if (sub === 'ringkasan') renderRingkasan(rows);
+            if (sub === 'produk') renderProfitProduk(rows);
+            if (sub === 'pay') renderProfitPay(rows);
+            if (sub === 'sales') renderProfitSales(rows);
+            if (sub === 'salesProduk') renderProfitSalesProduk(rows);
             if (sub === 'bulan') renderProfitBulan(getSalesRowsForBulanCompare());
             const btnDl = document.getElementById('btnDlProfit');
             const btnDlAll = document.getElementById('btnDlTransAll');
@@ -3153,7 +3043,6 @@
         }
 
         function renderProfitProduk(rows) {
-            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.produk || '').trim() || '—';
@@ -3227,59 +3116,7 @@
                 '</tr>';
         }
 
-        function renderSalesProduk(rows) {
-            rows = activeSalesRows(rows);
-            const salesSet = new Set();
-            const map = new Map();
-            for (const r of rows) {
-                const produk = String(r.produk || '').trim() || '—';
-                const sales = String(r.sales || '').trim() || '—';
-                const qty = Number(r.jumlah) || 0;
-                salesSet.add(sales);
-                if (!map.has(produk)) map.set(produk, { produk, sales: Object.create(null), total: 0, satuan: String(r.satuan || r.Satuan || '').trim() });
-                const g = map.get(produk);
-                g.sales[sales] = (g.sales[sales] || 0) + qty;
-                g.total += qty;
-                if (!g.satuan) g.satuan = String(r.satuan || r.Satuan || '').trim();
-            }
-            const sales = Array.from(salesSet).sort((a,b)=>a.localeCompare(b,'id'));
-            const list = Array.from(map.values()).sort((a,b)=>a.produk.localeCompare(b.produk,'id'));
-            document.getElementById('salesProdukPeriod').textContent = getSalesPeriodLabel();
-            const head = document.getElementById('salesProdukHead');
-            const body = document.getElementById('salesProdukBody');
-            if (!list.length) {
-                head.innerHTML = '<tr><th>PRODUK</th><th class="num">TOTAL QTY</th></tr>';
-                body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:24px;color:var(--muted)">Tidak ada data</td></tr>';
-                return;
-            }
-            head.innerHTML = '<tr><th>PRODUK</th>' + sales.map(s=>'<th class="num">'+esc(s)+'</th>').join('') + '<th class="num">TOTAL QTY</th><th>SATUAN</th></tr>';
-            const totals = Object.fromEntries(sales.map(s=>[s,0])); let grand=0;
-            body.innerHTML = list.map(g=>{
-                grand += g.total;
-                const cells = sales.map(s=>{ const q=g.sales[s]||0; totals[s]+=q; return '<td class="num">'+q.toLocaleString('id-ID')+'</td>'; }).join('');
-                return '<tr><td>'+esc(g.produk)+'</td>'+cells+'<td class="num"><strong>'+g.total.toLocaleString('id-ID')+'</strong></td><td>'+esc(g.satuan || '—')+'</td></tr>';
-            }).join('') + '<tr class="total-row"><td>TOTAL</td>' + sales.map(s=>'<td class="num">'+totals[s].toLocaleString('id-ID')+'</td>').join('') + '<td class="num">'+grand.toLocaleString('id-ID')+'</td><td>—</td></tr>';
-        }
-
-        function downloadSalesProdukExcel() {
-            const rows = activeSalesRows(lastSalesFiltered.length ? lastSalesFiltered : salesRows);
-            const salesSet = new Set(), map = new Map();
-            for (const r of rows) {
-                const produk=String(r.produk||'').trim()||'—', sales=String(r.sales||'').trim()||'—', qty=Number(r.jumlah)||0;
-                salesSet.add(sales); if(!map.has(produk)) map.set(produk,{produk,sales:Object.create(null),total:0,satuan:String(r.satuan||r.Satuan||'').trim()});
-                const g=map.get(produk); g.sales[sales]=(g.sales[sales]||0)+qty; g.total+=qty; if(!g.satuan) g.satuan=String(r.satuan||r.Satuan||'').trim();
-            }
-            const sales=Array.from(salesSet).sort((a,b)=>a.localeCompare(b,'id'));
-            const out=[['PER SALES PER PRODUK', getSalesPeriodLabel()], ['PRODUK', ...sales, 'TOTAL QTY', 'SATUAN']];
-            const totals=Object.fromEntries(sales.map(s=>[s,0])); let grand=0;
-            Array.from(map.values()).sort((a,b)=>a.produk.localeCompare(b.produk,'id')).forEach(g=>{ const vals=sales.map(s=>{const q=g.sales[s]||0;totals[s]+=q;return q;}); grand+=g.total; out.push([g.produk,...vals,g.total,g.satuan||'']); });
-            out.push(['TOTAL',...sales.map(s=>totals[s]),grand,'']);
-            const ws=XLSX.utils.aoa_to_sheet(out), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Per Sales Per Produk');
-            XLSX.writeFile(wb,'Per_Sales_Per_Produk.xlsx');
-        }
-
         function renderProfitPay(rows) {
-            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.produk || '').trim() || '—';
@@ -3351,7 +3188,6 @@
         }
 
         function renderProfitSales(rows) {
-            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const name = (r.sales || '').trim() || '—';
@@ -3423,8 +3259,54 @@
                 '</tr>';
         }
 
+        function renderProfitSalesProduk(rows) {
+            const cleanRows = (rows || []).filter(r => String(r.status || '').toUpperCase() !== 'BATAL' && !r.isBatal);
+            const salesSet = new Set();
+            const map = {};
+            for (const r of cleanRows) {
+                const produk = (r.produk || '').trim() || '—';
+                const sales = (r.sales || '').trim() || '—';
+                const qty = Number(r.jumlah) || 0;
+                const hargaBeli = Number(r.hargaBeli) || 0;
+                const hargaJual = Number(r.hargaJual) || 0;
+                const total = Number(r.total) || 0;
+                salesSet.add(sales);
+                if (!map[produk]) map[produk] = { produk, satuan: r.satuan || '', salesQty: {}, totalQty: 0, beliXQty: 0, jualXQty: 0, profit: 0 };
+                const g = map[produk];
+                g.salesQty[sales] = (g.salesQty[sales] || 0) + qty;
+                g.totalQty += qty;
+                g.beliXQty += hargaBeli * qty;
+                g.jualXQty += hargaJual * qty;
+                g.profit += total - (hargaBeli * qty);
+                if (!g.satuan && r.satuan) g.satuan = r.satuan;
+            }
+            const preferred = ['RAJU','HAFID','JOSSY','GC','PARIMIN'];
+            const salesList = Array.from(salesSet).sort((a,b) => {
+                const ia = preferred.indexOf(a.toUpperCase()), ib = preferred.indexOf(b.toUpperCase());
+                const ra = ia < 0 ? 999 : ia, rb = ib < 0 ? 999 : ib;
+                return ra !== rb ? ra-rb : a.localeCompare(b);
+            });
+            lastProfitSalesProdukRows = Object.values(map).sort((a,b) => b.totalQty-a.totalQty || a.produk.localeCompare(b.produk));
+            document.getElementById('profitSalesProdukPeriod').textContent = getSalesPeriodLabel();
+            const head = document.getElementById('profitSalesProdukHead');
+            const body = document.getElementById('profitSalesProdukBody');
+            if (!lastProfitSalesProdukRows.length) {
+                head.innerHTML = '<tr><th>PRODUK</th></tr>';
+                body.innerHTML = '<tr><td style="text-align:center;padding:24px;color:var(--muted)">Tidak ada data</td></tr>';
+                return;
+            }
+            head.innerHTML = '<tr><th>PRODUK</th>' + salesList.map(s => '<th class="num">'+esc(s)+'</th>').join('') + '<th class="num">TOTAL QTY</th><th>SATUAN</th><th class="num">HARGA BELI X QTY</th><th class="num">HARGA JUAL X QTY</th><th class="num">PROFIT</th></tr>';
+            let totals = { qty: 0, beli: 0, jual: 0, profit: 0, sales: {} };
+            body.innerHTML = lastProfitSalesProdukRows.map((r,i) => {
+                totals.qty += r.totalQty; totals.beli += r.beliXQty; totals.jual += r.jualXQty; totals.profit += r.profit;
+                return '<tr><td>'+esc(r.produk)+'</td>' + salesList.map(s => { const q=r.salesQty[s]||0; totals.sales[s]=(totals.sales[s]||0)+q; return '<td class="num">'+(q ? q.toLocaleString('id-ID') : '')+'</td>'; }).join('') +
+                    '<td class="num"><strong>'+r.totalQty.toLocaleString('id-ID')+'</strong></td><td>'+esc(r.satuan || '')+'</td><td class="num">'+fmt(r.beliXQty)+'</td><td class="num">'+fmt(r.jualXQty)+'</td><td class="num"><strong>'+fmt(r.profit)+'</strong></td></tr>';
+            }).join('') +
+            '<tr class="total-row"><td>TOTAL</td>' + salesList.map(s => '<td class="num">'+(totals.sales[s]||0).toLocaleString('id-ID')+'</td>').join('') +
+            '<td class="num">'+totals.qty.toLocaleString('id-ID')+'</td><td></td><td class="num">'+fmt(totals.beli)+'</td><td class="num">'+fmt(totals.jual)+'</td><td class="num">'+fmt(totals.profit)+'</td></tr>';
+        }
+
         function renderProfitBulan(rows) {
-            rows = activeSalesRows(rows);
             const map = {};
             for (const r of rows) {
                 const bulan = r.month || 'Lainnya';
@@ -3506,7 +3388,7 @@
             const safePeriod = period.replace(/\s+/g, '_');
             let sheetName, aoa, fileName;
             if (currentSalesSub === 'ringkasan') {
-                const rows = activeSalesRows(lastSalesFiltered.length ? lastSalesFiltered : salesRows);
+                const rows = lastSalesFiltered.length ? lastSalesFiltered : salesRows;
                 const fitriRows = rows.filter(r => isFitriProduk(r.produk));
                 const pivot = buildRingkasanPivot(fitriRows);
                 sheetName = 'Ringkasan Fitri';
@@ -3533,7 +3415,13 @@
                 ];
                 aoa.push(['No', 'Produk', 'Qty', 'Total Penjualan', 'Total HPP', 'Harga Jual', 'Harga Beli', 'Profit']);
                 lastProfitProdukRows.forEach((r, i) => {
-                    aoa.push([i + 1, r.produk, r.qty, r.totalPenjualan, r.totalHpp, r.hargaJual, r.hargaBeli, r
+                    // Excel tidak bisa menampilkan object {min,max,isRange} sebagai nilai sel.
+                    // Ubah range harga jual menjadi teks yang mudah dibaca.
+                    let hargaJualExcel = r.hargaJual;
+                    if (r.hargaJual && typeof r.hargaJual === 'object' && r.hargaJual.isRange) {
+                        hargaJualExcel = fmt(r.hargaJual.max) + ' - ' + fmt(r.hargaJual.min);
+                    }
+                    aoa.push([i + 1, r.produk, r.qty, r.totalPenjualan, r.totalHpp, hargaJualExcel, r.hargaBeli, r
                         .profit
                     ]);
                 });
@@ -3593,6 +3481,24 @@
                     tp: a.tp + r.totalProfit
                 }), { qf: 0, qr: 0, nf: 0, nr: 0, pf: 0, pr: 0, tp: 0 });
                 aoa.push(['', 'TOTAL', t2.qf, t2.qr, t2.nf, t2.nr, t2.pf, t2.pr, t2.tp]);
+            } else if (currentSalesSub === 'salesProduk') {
+                const reportRows = (scope === 'all') ? salesRows : (lastSalesFiltered.length ? lastSalesFiltered : salesRows);
+                renderProfitSalesProduk(reportRows);
+                const salesSet = new Set();
+                lastProfitSalesProdukRows.forEach(r => Object.keys(r.salesQty).forEach(s => salesSet.add(s)));
+                const preferred = ['RAJU','HAFID','JOSSY','GC','PARIMIN'];
+                const salesList = Array.from(salesSet).sort((a,b) => { const ia=preferred.indexOf(a.toUpperCase()), ib=preferred.indexOf(b.toUpperCase()); const ra=ia<0?999:ia, rb=ib<0?999:ib; return ra!==rb?ra-rb:a.localeCompare(b); });
+                sheetName = 'Per Sales Per Produk';
+                fileName = 'Per_Sales_Per_Produk_' + safePeriod + '.xlsx';
+                aoa = [['PER SALES PER PRODUK', '', '', '', '', '', '', '', period]];
+                aoa.push(['PRODUK'].concat(salesList).concat(['TOTAL QTY','SATUAN','HARGA BELI X QTY','HARGA JUAL X QTY','PROFIT']));
+                const totals = {qty:0,beli:0,jual:0,profit:0,sales:{}};
+                lastProfitSalesProdukRows.forEach(r => {
+                    salesList.forEach(s => totals.sales[s]=(totals.sales[s]||0)+(r.salesQty[s]||0));
+                    totals.qty+=r.totalQty; totals.beli+=r.beliXQty; totals.jual+=r.jualXQty; totals.profit+=r.profit;
+                    aoa.push([r.produk].concat(salesList.map(s => r.salesQty[s]||0)).concat([r.totalQty,r.satuan||'',r.beliXQty,r.jualXQty,r.profit]));
+                });
+                aoa.push(['TOTAL'].concat(salesList.map(s=>totals.sales[s]||0)).concat([totals.qty,'',totals.beli,totals.jual,totals.profit]));
             } else if (currentSalesSub === 'bulan') {
                 if (!lastProfitBulanRows.length) renderProfitBulan(getSalesRowsForBulanCompare());
                 sheetName = 'Profit Per Bulan';
@@ -3646,8 +3552,7 @@
                         r.customer || '',
                         r.alamat || '',
                         r.pembayaran || '',
-                        r.hargaBeli || 0,
-                        isSalesBatal(r) ? 'BATAL' : 'AKTIF'
+                        r.hargaBeli || 0
                     ]);
                 });
             }
@@ -3678,6 +3583,7 @@
             lastProfitProdukRows = [];
             lastProfitPayRows = [];
             lastProfitSalesRows = [];
+            lastProfitSalesProdukRows = [];
             lastProfitBulanRows = [];
             invalidateSalesIndex();
             saveRowsToDBAndSync([], DB_KEY_SALES);
@@ -3697,17 +3603,17 @@
             document.getElementById('ringkasanFitriWrap').classList.remove('show');
             document.getElementById('ringkasanRupaWrap').classList.remove('show');
             document.getElementById('profitProdukWrap').classList.remove('show');
-            document.getElementById('salesProdukWrap').classList.remove('show');
             document.getElementById('profitPayWrap').classList.remove('show');
             document.getElementById('profitSalesWrap').classList.remove('show');
+            document.getElementById('profitSalesProdukWrap').classList.remove('show');
             document.getElementById('profitBulanWrap').classList.remove('show');
             currentSalesSub = 'ringkasan';
             document.getElementById('subBtnRingkasan').classList.add('active');
             document.getElementById('subBtnTransaksi').classList.remove('active');
             document.getElementById('subBtnProduk').classList.remove('active');
-            document.getElementById('subBtnSalesProduk').classList.remove('active');
             document.getElementById('subBtnPay').classList.remove('active');
             document.getElementById('subBtnSales').classList.remove('active');
+            document.getElementById('subBtnSalesProduk').classList.remove('active');
             document.getElementById('subBtnBulan').classList.remove('active');
             salesEmptyState.style.display = 'block';
             salesEmptyState.querySelector('.hint').textContent =
@@ -3988,7 +3894,7 @@
                     const u = umByFaktur.get(fk);
                     if (!u) continue;
                     const paymentAmount = Number(u.paidAmount) || 0;
-                    const referenceAmount = cekPaymentReferenceAmount(u, g.nominal);
+                    const referenceAmount = Number(g.nominal) || Number(u.tagihanUM) || 0;
                     if (!paymentAmount && !u.hasLunas) continue;
                     const amountScoreValue = cekAmountScore(paymentAmount, referenceAmount);
                     if (!amountScoreValue && !u.hasLunas) continue;
@@ -4103,19 +4009,9 @@
                         });
                     }
                     const u = umByFaktur.get(fk);
-                    const rowPaid = (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                    u.tagihanUM = Math.max(u.tagihanUM, Number(r.tagihan) || 0);
+                    u.paidAmount += (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
                         (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
-                    const rowSort = dateSortKey(r.date, r.sheet);
-                    // Tagihan di Uang Masuk selalu berarti TAGIHAN TERAKHIR / sisa tagihan.
-                    // Untuk Anomali/fuzzy matching, gunakan baris terakhir, bukan tagihan terbesar.
-                    if (!u.latestSort || rowSort >= u.latestSort) {
-                        u.latestSort = rowSort;
-                        u.latestDateLabel = r.date || '';
-                        u.latestTagihan = Number(r.tagihan) || 0;
-                        u.latestPaidAmount = rowPaid;
-                        u.latestStatus = r.status || '';
-                    }
-                    u.paidAmount += rowPaid;
                     if (r.status === 'LUNAS') u.hasLunas = true;
                     if (r.status === 'TITIP') u.hasTitip = true;
                     if (!u.dateLabel && r.date) u.dateLabel = r.date;
@@ -4133,7 +4029,6 @@
                 // Kelompokkan Data Penjualan per No.Faktur (SEMUA tipe pembayaran, Cash maupun Tempo)
                 const byFaktur = new Map();
                 for (const r of salesRows) {
-                    if (isSalesBatal(r)) continue;
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
                     const pay = String(r.pembayaran || '').trim().toUpperCase();
@@ -4340,7 +4235,6 @@
                 // Agregat dari Data Penjualan (bukan Cash)
                 const byFaktur = new Map();
                 for (const r of salesRows) {
-                    if (isSalesBatal(r)) continue;
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
                     if (isCashPay(r.pembayaran)) continue; // skip Cash murni
@@ -4418,11 +4312,10 @@
                     const u = resolvedUM.get(g.noFaktur);
                     // Status tagihan memakai BARIS TERAKHIR Uang Masuk:
                     // tagihan terakhir dibandingkan dengan pembayaran pada baris terakhir.
-                    const paymentSnapshot = latestPaymentSnapshot(u, g.nominal);
-                    const paidAmount = paymentSnapshot.pembayaran;
-                    const tagihanUM = paymentSnapshot.tagihan;
-                    const hasLunas = paymentSnapshot.status === 'LUNAS';
-                    const hasTitip = paymentSnapshot.status === 'TITIP';
+                    const paidAmount = u ? (Number(u.latestPaidAmount) || 0) : 0;
+                    const tagihanUM = u ? (Number(u.latestTagihan) || 0) : 0;
+                    const hasLunas = u ? (u.latestStatus === 'LUNAS') : false;
+                    const hasTitip = u ? (u.latestStatus === 'TITIP') : false;
                     const isPiutang = u ? u.isPiutang : false;
                     const totalPaidHistory = u ? (Number(u.paidAmount) || 0) : 0;
 
@@ -4553,7 +4446,7 @@
                     '<td class="muted">' + esc(r.alamat) + '</td>' +
                     '<td>' + esc(r.pembayaran || 'Cash') + '</td>' +
                     '</tr>';
-            }, { rowHeight: 56, colspan: 11 }
+            }, { rowHeight: 40, colspan: 11 }
         );
 
         function getCekSelectedBulan() {
@@ -4807,7 +4700,7 @@
             if (stFilter !== 'all') {
                 rows = rows.filter(r => {
                     if (stFilter === 'lunas') return r.statusCek === 'Lunas';
-                    if (stFilter === 'overdue') return !!r.isOverdue;
+                    if (stFilter === 'overdue') return r.statusCek === 'Overdue';
                     if (stFilter === 'belum_jt') return r.statusCek === 'Belum Jatuh Tempo';
                     if (stFilter === 'titip') return r.statusCek === 'Titip';
                     if (stFilter === 'belum_bayar') return r.statusCek === 'Cash';
@@ -4831,12 +4724,12 @@
             if (!isAnomali) updateCekReconciliationCards(bulanList);
 
             if (isTempo) {
-                const nOd = rows.filter(r => !!r.isOverdue).length;
-                const nomOd = rows.filter(r => !!r.isOverdue).reduce((s, r) => s + r.nominal, 0);
+                const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
+                const nomOd = rows.filter(r => r.statusCek === 'Overdue').reduce((s, r) => s + r.nominal, 0);
                 document.getElementById('cekCard1Label').textContent = 'Jml Faktur Tempo';
                 document.getElementById('cekCard2Label').textContent = 'Nominal Tempo';
-                document.getElementById('cekCard3Label').textContent = 'Jml Sudah JT';
-                document.getElementById('cekCard4Label').textContent = 'Nominal Sudah JT';
+                document.getElementById('cekCard3Label').textContent = 'Jml Overdue';
+                document.getElementById('cekCard4Label').textContent = 'Nominal Overdue';
                 document.getElementById('cekCard1').textContent = nFaktur.toLocaleString('id-ID');
                 document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
                 document.getElementById('cekCard3').textContent = nOd.toLocaleString('id-ID');
@@ -5906,11 +5799,11 @@
         Object.assign(window, {
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
-            openFakturModal, closeFakturModal, openSalesDetailModal, closeSalesDetailModal, confirmSalesBatal, openCekTempoDetail, closeCekTempoDetail,
+            openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
             openTempoJtModal, closeTempoJtModal, openHargaJualModal, closeHargaJualModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
-            downloadCurrentSalesExcel, downloadSalesProdukExcel, clearSalesData, toggleSalesDlMenu, closeSalesDlMenu,
+            downloadCurrentSalesExcel, clearSalesData, toggleSalesDlMenu, closeSalesDlMenu,
             switchCekSub, toggleCekBulanPanel, onCekBulanAllChange, onCekBulanItemChange,
             toggleCekDownloadMenu, renderCekTable, resetCekSearch, downloadCekExcel,
             pickBackupFolder, restoreFromBackupFolder, saveBackupJson, setAutoBackupJsonEnabled,
