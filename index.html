@@ -1121,8 +1121,14 @@
 
         // ---- Cloud sync (debounced) ----
         let _syncTimer = null;
+        const LOCAL_DATA_UPDATED_KEY = 'localDataUpdatedAt';
+
+        function markLocalDataUpdated() {
+            try { localStorage.setItem(LOCAL_DATA_UPDATED_KEY, new Date().toISOString()); } catch (err) {}
+        }
 
         function queueCloudSync() {
+            markLocalDataUpdated();
             clearTimeout(_syncTimer);
             _syncTimer = setTimeout(() => {
                 if (supabaseClient) pushToSupabase();
@@ -1136,6 +1142,7 @@
             if (!supabaseClient) return false;
             try {
                 setCloudStatus('Menyimpan ke cloud…', false);
+                const nowIso = new Date().toISOString();
                 const { error } = await supabaseClient
                     .from('app_data')
                     .upsert({
@@ -1144,9 +1151,10 @@
                         sales_rows: salesRows,
                         rapikan_rows: (window.__rapGetCleanRows && window.__rapGetCleanRows()) || [],
                         harga_beli_rows: (window.__rapGetPriceRows && window.__rapGetPriceRows()) || [],
-                        updated_at: new Date().toISOString()
+                        updated_at: nowIso
                     });
                 if (error) throw error;
+                try { localStorage.setItem(LOCAL_DATA_UPDATED_KEY, nowIso); } catch (err) {}
                 setCloudStatus('Tersimpan di cloud ✓', false);
                 return true;
             } catch (err) {
@@ -6070,8 +6078,47 @@
         (async function initFromDB() {
             let saved = null,
                 savedSales = null;
+            // Ambil data lokal DULU (sebelum menimpa apa pun), supaya bisa
+            // dibandingkan timestamp-nya dengan data cloud. Rapikan & Harga Beli
+            // ikut diambil di sini juga karena mereka disimpan dalam SATU baris
+            // cloud yang sama (satu updated_at) dengan Uang Masuk/Penjualan.
+            const localAll = await loadRowsFromDB(DB_KEY);
+            const localSales = await loadRowsFromDB(DB_KEY_SALES);
+            const localRapikan = await loadRowsFromDB(DB_KEY_RAPIKAN);
+            const localHargaBeli = await loadRowsFromDB(DB_KEY_HARGA_BELI);
+            const hasLocalData = !!((localAll && localAll.length) || (localSales && localSales.length) ||
+                (localRapikan && localRapikan.length) || (localHargaBeli && localHargaBeli.length));
+            let localTs = 0;
+            try {
+                const raw = localStorage.getItem(LOCAL_DATA_UPDATED_KEY);
+                if (raw) localTs = new Date(raw).getTime() || 0;
+            } catch (err) {}
+
             const cloud = await pullFromSupabase();
-            if (cloud && (Array.isArray(cloud.all_rows) || Array.isArray(cloud.sales_rows))) {
+            const hasCloudData = !!(cloud && (
+                (Array.isArray(cloud.all_rows) && cloud.all_rows.length) ||
+                (Array.isArray(cloud.sales_rows) && cloud.sales_rows.length) ||
+                (Array.isArray(cloud.rapikan_rows) && cloud.rapikan_rows.length) ||
+                (Array.isArray(cloud.harga_beli_rows) && cloud.harga_beli_rows.length)
+            ));
+            const cloudTs = (cloud && cloud.updated_at) ? (new Date(cloud.updated_at).getTime() || 0) : 0;
+
+            // Cloud dipakai kalau: belum ada data lokal sama sekali, ATAU belum
+            // pernah ada catatan waktu perubahan lokal (device baru/browser baru),
+            // ATAU data cloud memang lebih baru/sama dari perubahan lokal terakhir.
+            // Kalau data LOKAL lebih baru dari cloud, lokal yang dipakai dan
+            // didorong ke cloud (bukan ditimpa) supaya cloud ikut ter-update.
+            // Satu keputusan ini dipakai untuk SEMUA data (Uang Masuk, Penjualan,
+            // Rapikan, Harga Beli) karena semuanya berbagi satu baris cloud & satu
+            // updated_at yang sama.
+            const cloudWins = hasCloudData && (!hasLocalData || !localTs || cloudTs >= localTs);
+            // Push lokal->cloud (kalau lokal menang) ditunda sampai SETELAH
+            // Rapikan/Harga Beli dimuat ke memori di bawah -- supaya payload
+            // yang dikirim ke cloud lengkap, bukan rapikan_rows/harga_beli_rows
+            // kosong karena belum sempat di-set.
+            let shouldPushLocalToCloud = false;
+
+            if (cloudWins) {
                 saved = Array.isArray(cloud.all_rows) ? cloud.all_rows : [];
                 savedSales = Array.isArray(cloud.sales_rows) ? cloud.sales_rows : [];
                 allRows = saved;
@@ -6080,9 +6127,17 @@
                 invalidateSalesIndex();
                 saveRowsToDBAndSync(allRows, DB_KEY);
                 saveRowsToDBAndSync(salesRows, DB_KEY_SALES);
+                try { localStorage.setItem(LOCAL_DATA_UPDATED_KEY, cloud.updated_at || new Date().toISOString()); } catch (err) {}
             } else {
-                saved = await loadRowsFromDB(DB_KEY);
-                savedSales = await loadRowsFromDB(DB_KEY_SALES);
+                saved = localAll;
+                savedSales = localSales;
+                if (hasLocalData && hasCloudData && supabaseClient) {
+                    // Data lokal lebih baru dari cloud -> jangan ditimpa, malah
+                    // dorong data lokal ke cloud supaya cloud ikut ter-update.
+                    allRows = saved || [];
+                    salesRows = savedSales || [];
+                    shouldPushLocalToCloud = true;
+                }
             }
             if (saved && saved.length) {
                 allRows = saved;
@@ -6107,17 +6162,19 @@
             if ((saved && saved.length) || (savedSales && savedSales.length)) {
                 document.getElementById('tabsBar').style.display = 'flex';
             }
-            // Rapikan data
+            // Rapikan data (pakai keputusan cloudWins yang sama dengan di atas,
+            // karena rapikan_rows/harga_beli_rows disimpan di baris cloud yang
+            // sama dengan all_rows/sales_rows, satu updated_at bersama).
             let savedRapikan = null,
                 savedHargaBeli = null;
-            if (cloud && (Array.isArray(cloud.rapikan_rows) || Array.isArray(cloud.harga_beli_rows))) {
+            if (cloudWins) {
                 savedRapikan = Array.isArray(cloud.rapikan_rows) ? cloud.rapikan_rows : [];
                 savedHargaBeli = Array.isArray(cloud.harga_beli_rows) ? cloud.harga_beli_rows : [];
                 saveRowsToDBAndSync(savedRapikan, DB_KEY_RAPIKAN);
                 saveRowsToDBAndSync(savedHargaBeli, DB_KEY_HARGA_BELI);
             } else {
-                savedRapikan = await loadRowsFromDB(DB_KEY_RAPIKAN);
-                savedHargaBeli = await loadRowsFromDB(DB_KEY_HARGA_BELI);
+                savedRapikan = localRapikan;
+                savedHargaBeli = localHargaBeli;
             }
             if (savedRapikan && savedRapikan.length && window.__rapSetCleanRows) {
                 window.__rapSetCleanRows(savedRapikan);
@@ -6125,6 +6182,10 @@
             if (savedHargaBeli && savedHargaBeli.length && window.__rapSetPriceRows) {
                 window.__rapSetPriceRows(savedHargaBeli);
             }
+            // Push lokal->cloud (kalau lokal lebih baru) baru dilakukan DI SINI,
+            // setelah Rapikan/Harga Beli sudah masuk ke memori -- supaya payload
+            // yang dikirim ke cloud lengkap (bukan rapikan/harga beli kosong).
+            if (shouldPushLocalToCloud) pushToSupabase();
 
             // Backup folder handle
             if (backupSupported()) {
