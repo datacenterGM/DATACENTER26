@@ -1993,15 +1993,22 @@
             document.getElementById('cekTempoCustomer').textContent = row.customer || '—';
             document.getElementById('cekTempoSales').textContent = row.sales || '—';
             document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
-            document.getElementById('cekTempoModalStatus').innerHTML =
-                '<span class="badge badge-retur">TIDAK DITEMUKAN DI DATA PENJUALAN</span>';
+            let umStatusHtml = '';
+            if (row.statusCek === 'Lunas') umStatusHtml = '<span class="badge badge-lunas">LUNAS</span>';
+            else if (row.statusCek === 'Titip') umStatusHtml = '<span class="badge badge-titip">TITIP / SEBAGIAN</span>';
+            else if (row.statusCek === 'Overdue') umStatusHtml = '<span class="badge badge-retur">OVERDUE ' + (row.umurOverdueStr || '') + '</span>';
+            else umStatusHtml = '<span class="badge badge-tf">BELUM JATUH TEMPO</span>';
+            umStatusHtml += ' <span class="badge badge-retur" style="margin-left:6px;">TIDAK DITEMUKAN DI DATA PENJUALAN</span>';
+            document.getElementById('cekTempoModalStatus').innerHTML = umStatusHtml;
             document.getElementById('cekTempoModalStats').innerHTML =
                 '<div class="modal-stat"><div class="l">Tanggal Uang Masuk</div><div class="v">' + esc(fmtCekTanggalTampilan(latest.date || latest.tanggal, parseSalesDate(latest.date || latest.tanggal))) + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Total Uang Masuk</div><div class="v">' + fmt(total) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Jatuh Tempo</div><div class="v">' + esc(row.jatuhTempoStr || '—') + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Total Uang Masuk (histori)</div><div class="v">' + fmt(total) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Cash</div><div class="v">' + fmt(cash) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Transfer</div><div class="v">' + fmt(tf) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Jumlah Catatan</div><div class="v">' + details.length.toLocaleString('id-ID') + '</div></div>' +
-                '<div class="modal-stat"><div class="l">Tagihan Terakhir</div><div class="v">' + fmt(Number(latest.tagihan) || 0) + '</div></div>';
+                '<div class="modal-stat"><div class="l">Tagihan Terakhir</div><div class="v">' + fmt(Number(latest.tagihan) || 0) + '</div></div>' +
+                '<div class="modal-stat"><div class="l">Bayar Terakhir</div><div class="v" style="color:var(--green)">' + fmt(Number(row.paidAmount) || 0) + '</div></div>';
 
             let html = '<div style="margin-bottom:8px;font-weight:800;">Rincian Data Uang Masuk</div>';
             html += '<div style="overflow:auto;max-height:360px;border:1px solid var(--border);border-radius:8px;">';
@@ -4094,52 +4101,121 @@
                     if (nk) salesNorm.add(nk);
                 }
 
-                const byUM = new Map();
+                // Hanya section PIUTANG yang relevan di sini (Cash Dropping punya
+                // alur "⚠ Tidak di Penjualan" sendiri di tab Cash). Agregasi memakai
+                // pola "baris terakhir" yang sama dengan tab Tempo, supaya status
+                // Lunas/Titip/Overdue dihitung dari tagihan TERAKHIR, bukan sekadar
+                // dijumlahkan begitu saja (yang bisa salah kalau ada beberapa
+                // pencatatan cicilan untuk faktur yang sama).
+                const umByFaktur = new Map();
                 for (const r of (allRows || [])) {
                     const fk = String(r.faktur || '').trim();
                     if (!fk) continue;
-                    const nk = normFakturKey(fk);
-                    if (salesMap.has(fk) || (nk && salesNorm.has(nk))) continue;
-
-                    if (!byUM.has(fk)) byUM.set(fk, {
-                        noFaktur: fk, tanggal: '', tglDate: null, sales: '', customer: '', alamat: '',
-                        nominal: 0, paidAmount: 0, cashTotal: 0, tfTotal: 0, tagihanUM: 0,
-                        statusCek: 'Belum Bayar', pembayaran: '', month: '', fromSales: false,
-                        umDetail: [], items: 0
-                    });
-                    const g = byUM.get(fk);
-                    const paid = (Number(r.minyakCash)||0) + (Number(r.minyakTf)||0) +
-                        (Number(r.rupaCash)||0) + (Number(r.rupaTf)||0);
-                    g.paidAmount += paid;
-                    g.nominal += paid;
-                    g.cashTotal += (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0);
-                    g.tfTotal += (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0);
-                    g.tagihanUM = Number(r.tagihan) || g.tagihanUM;
-                    g.umDetail.push(r);
-                    if (r.date) {
-                        const d = parseSalesDate(r.date);
-                        if (!g.tglDate || (d && d > g.tglDate)) { g.tglDate = d; g.tanggal = r.date; }
+                    const sec = String(r.section || '').toUpperCase();
+                    if (!sec.includes('PIUTANG')) continue;
+                    if (!umByFaktur.has(fk)) {
+                        umByFaktur.set(fk, {
+                            noFaktur: fk, paidAmount: 0, hasLunas: false, hasTitip: false,
+                            dateLabel: '', salesName: '', toko: '', alamat: '',
+                            latestSort: null, latestDateLabel: '', latestTagihan: 0,
+                            latestPaidAmount: 0, latestStatus: '', cashTotal: 0, tfTotal: 0,
+                            umDetail: []
+                        });
                     }
-                    if (r.sales) g.sales = r.sales;
-                    if (r.toko && r.toko !== '—') g.customer = r.toko;
-                    if (r.alamat && r.alamat !== '—') g.alamat = r.alamat;
-                    g.pembayaran = r.section || r.status || g.pembayaran || '—';
-                    g.month = r.month || monthNameFromDate(g.tglDate) || g.month;
-                    if (r.status === 'LUNAS') g.statusCek = 'Lunas';
-                    else if (r.status === 'TITIP' && g.statusCek !== 'Lunas') g.statusCek = 'Titip';
+                    const u = umByFaktur.get(fk);
+                    const rowPaid = (Number(r.minyakCash)||0) + (Number(r.minyakTf)||0) +
+                        (Number(r.rupaCash)||0) + (Number(r.rupaTf)||0);
+                    const rowSort = dateSortKey(r.date, r.sheet);
+                    if (u.latestSort == null || rowSort >= u.latestSort) {
+                        u.latestSort = rowSort;
+                        u.latestDateLabel = r.date || '';
+                        u.latestTagihan = Number(r.tagihan) || 0;
+                        u.latestPaidAmount = rowPaid;
+                        u.latestStatus = r.status || '';
+                    }
+                    u.paidAmount += rowPaid;
+                    u.cashTotal += (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0);
+                    u.tfTotal += (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0);
+                    if (r.status === 'LUNAS') u.hasLunas = true;
+                    if (r.status === 'TITIP') u.hasTitip = true;
+                    if (!u.dateLabel && r.date) u.dateLabel = r.date;
+                    if (!u.salesName && r.sales) u.salesName = r.sales;
+                    if (!u.toko && r.toko && r.toko !== '—') u.toko = r.toko;
+                    if (!u.alamat && r.alamat && r.alamat !== '—') u.alamat = r.alamat;
+                    u.umDetail.push(r);
                 }
 
-                for (const g of byUM.values()) {
-                    g.umDetail.sort((a,b) => dateSortKey(a.date,a.sheet) - dateSortKey(b.date,b.sheet));
-                    g.jatuhTempo = null;
-                    g.jatuhTempoStr = '—';
-                    g.isOverdue = false;
-                    g.umurOverdue = 0;
-                    g.umurOverdueStr = '—';
-                    g.items = g.umDetail.length;
-                    out.push(g);
+                // Tahap 1: buang yang ketemu exact ATAU normalized (beda format
+                // penomoran) di Data Penjualan -- sudah dianggap "ada".
+                const stillUnresolved = [];
+                for (const [fk, u] of umByFaktur.entries()) {
+                    if (salesMap.has(fk)) continue;
+                    const nk = normFakturKey(fk);
+                    if (nk && salesNorm.has(nk)) continue;
+                    const tglDate = parseSalesDate(u.latestDateLabel || u.dateLabel);
+                    stillUnresolved.push({
+                        noFaktur: fk, customer: u.toko, alamat: u.alamat, sales: u.salesName,
+                        tglDate, nominal: u.latestTagihan || u.latestPaidAmount || 0
+                    });
                 }
-                out.sort((a,b) => (b.tglDate ? b.tglDate.getTime() : 0) - (a.tglDate ? a.tglDate.getTime() : 0));
+
+                // Tahap 2: sisanya dicoba fuzzy-match ke Data Penjualan (kemiripan
+                // customer/alamat/sales + tanggal + nominal + kemiripan No.Faktur),
+                // memakai infrastruktur yang SAMA dengan tab Tempo/Anomali supaya
+                // definisi "ketemu" konsisten di semua tab Cek Data. Hanya faktur
+                // yang gagal di KEDUA tahap yang benar-benar "Tanpa Penjualan".
+                const salesAsCandidate = new Map();
+                for (const [fk, sp] of salesMap.entries()) {
+                    salesAsCandidate.set(fk, {
+                        paidAmount: sp.nominal, tagihanUM: sp.nominal, hasLunas: false,
+                        dateLabel: sp.tanggal, salesName: sp.sales, toko: sp.customer, alamat: sp.alamat
+                    });
+                }
+                const fuzzyUsedKeys = new Set();
+                const fuzzyResolved = await resolveCekFuzzyMatchesGlobally(stillUnresolved, salesAsCandidate, fuzzyUsedKeys);
+
+                for (const g of stillUnresolved) {
+                    if (fuzzyResolved.has(g.noFaktur)) continue; // ketemu via fuzzy -> bukan "Tanpa Penjualan"
+                    const u = umByFaktur.get(g.noFaktur);
+                    const due = g.tglDate ? addDays(g.tglDate, CEK_TEMPO_DAYS) : null;
+                    const isLunas = u.hasLunas || (u.latestTagihan > 0 && u.latestPaidAmount >= u.latestTagihan - 1);
+                    const isTitip = !isLunas && (u.hasTitip || u.latestPaidAmount > 0);
+                    const isOverdue = !isLunas && !!(due && daysBetween(due, today) > 0);
+                    const umurOverdue = isOverdue ? daysBetween(due, today) : 0;
+                    u.umDetail.sort((a,b) => dateSortKey(a.date,a.sheet) - dateSortKey(b.date,b.sheet));
+                    out.push({
+                        noFaktur: g.noFaktur,
+                        tanggal: u.latestDateLabel || u.dateLabel || '',
+                        tglDate: g.tglDate,
+                        sales: u.salesName || '',
+                        customer: u.toko || '',
+                        alamat: u.alamat || '',
+                        nominal: g.nominal,
+                        paidAmount: u.latestPaidAmount || 0,
+                        paidAmountHistory: u.paidAmount || 0,
+                        cashTotal: u.cashTotal || 0,
+                        tfTotal: u.tfTotal || 0,
+                        tagihanUM: u.latestTagihan || 0,
+                        tagihanUMDate: u.latestDateLabel || '',
+                        statusCek: isLunas ? 'Lunas' : (isTitip ? 'Titip' : (isOverdue ? 'Overdue' : 'Belum Jatuh Tempo')),
+                        pembayaran: 'Piutang',
+                        month: monthNameFromDate(g.tglDate) || 'Lainnya',
+                        fromSales: false,
+                        jatuhTempo: due,
+                        jatuhTempoStr: due ? fmtDateID(due) : '—',
+                        isOverdue,
+                        umurOverdue,
+                        umurOverdueStr: isOverdue ? umurOverdue + ' hari' : '—',
+                        items: u.umDetail.length,
+                        umDetail: u.umDetail
+                    });
+                }
+                out.sort((a,b) => {
+                    if (a.isOverdue && !b.isOverdue) return -1;
+                    if (b.isOverdue && !a.isOverdue) return 1;
+                    if ((a.umurOverdue||0) !== (b.umurOverdue||0)) return (b.umurOverdue||0) - (a.umurOverdue||0);
+                    return (b.tglDate ? b.tglDate.getTime() : 0) - (a.tglDate ? a.tglDate.getTime() : 0);
+                });
                 cekFakturCache[cacheKey] = out;
                 cekFakturCacheDirty[cacheKey] = false;
                 return out;
@@ -4587,9 +4663,10 @@
                         '</tr>';
                 }
                 if (isTempo || isNosales) {
+                    const detailFn = isNosales ? 'openCekUangMasukDetail' : 'openCekTempoDetail';
                     return '<tr>' +
                         '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
-                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span>' + (isNosales ? '' : notInSalesBadge(r)) + '</td>' +
+                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="' + detailFn + '(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span>' + (isNosales ? '' : notInSalesBadge(r)) + '</td>' +
                         '<td class="toko">' + esc(r.customer) + '</td>' +
                         '<td>' + esc(r.sales) + '</td>' +
                         '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
@@ -6006,7 +6083,7 @@
         Object.assign(window, {
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
-            openFakturModal, closeFakturModal, openCekTempoDetail, closeCekTempoDetail,
+            openFakturModal, closeFakturModal, openCekTempoDetail, openCekUangMasukDetail, closeCekTempoDetail,
             openTempoJtModal, closeTempoJtModal, openHargaJualModal, closeHargaJualModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
@@ -6017,6 +6094,7 @@
             installApp, toggleRingkasanRupaShowAll
         });
     </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
 <script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
 </body>
 </html>
