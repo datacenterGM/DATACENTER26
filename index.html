@@ -771,7 +771,7 @@
                 <div class="hint">
                     Sub-tab <b>Cash</b> = faktur <b>Cash Dropping</b> dari tab Uang Masuk.<br>
                     Sub-tab <b>Tempo</b> = faktur dari Data Penjualan yang pembayarannya <b>bukan Cash</b> (kosong / Tempo / Kredit) <b>dan ketemu pasangannya</b> di Data Penjualan.<br>
-                    Sub-tab <b>Tanpa Penjualan</b> = faktur Piutang yang <b>ada di Uang Masuk</b> tapi <b>tidak ditemukan sama sekali</b> di Data Penjualan (exact maupun fuzzy match) — perlu dicek manual, kemungkinan lupa diinput atau nomor faktur beda jauh.<br>
+                    Sub-tab <b>Tanpa Penjualan</b> = data <b>Uang Masuk</b> yang memiliki No.Faktur tetapi <b>tidak ditemukan sama sekali</b> di Data Penjualan (exact, normalized, maupun fuzzy match) — sumber utama daftar ini adalah Uang Masuk.<br>
                     Sub-tab <b>Belum Ada Uang Masuk</b> = faktur yang tercatat di <b>Data Penjualan</b> tetapi <b>tidak ditemukan sama sekali</b> di <b>Data Uang Masuk</b> setelah exact, normalized, dan fuzzy match — jadi ini daftar khusus yang perlu ditindaklanjuti.<br>
                     Pastikan di tab <b>Data Penjualan</b> sudah ada data dan kolom Pembayaran terisi (atau biarkan kosong agar dianggap Tempo).
                 </div>
@@ -1981,23 +1981,75 @@
             const row = (lastCekRows || []).find(r => String(r.noFaktur || '') === faktur);
             if (!row) return;
 
-            const nominal = Number(row.nominal) || 0; // nilai faktur awal dari Data Penjualan
-            const tagihanTerakhir = Number(row.tagihanUM) || 0; // sisa/tagihan terakhir dari Uang Masuk
-            const paid = Number(row.paidAmount) || 0; // pembayaran pada baris/tagihan terakhir
+            // TANPA PENJUALAN: modal harus menunjukkan DATA UANG MASUK asli,
+            // bukan seolah-olah ini detail dari Data Penjualan.
+            if (cekSub === 'nosales' || row.fromSales === false) {
+                const umRows = Array.isArray(row.umDetail) ? row.umDetail : [];
+                const totalCash = umRows.reduce((s,r) => s + (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0), 0);
+                const totalTf = umRows.reduce((s,r) => s + (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0), 0);
+                const totalBayar = totalCash + totalTf;
+                const latest = umRows.length ? umRows[umRows.length - 1] : null;
+                const status = latest && latest.status ? latest.status : '—';
+
+                document.getElementById('cekTempoModalTitle').textContent = 'Detail Uang Masuk · ' + faktur;
+                document.getElementById('cekTempoModalSub').textContent = '⚠ Tidak ditemukan di Data Penjualan';
+                document.getElementById('cekTempoCustomer').textContent = row.customer || '—';
+                document.getElementById('cekTempoSales').textContent = row.sales || '—';
+                document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
+                document.getElementById('cekTempoModalStatus').innerHTML =
+                    '<span class="badge badge-titip">⚠ TIDAK ADA DI DATA PENJUALAN</span>';
+
+                document.getElementById('cekTempoModalStats').innerHTML =
+                    '<div class="modal-stat"><div class="l">Tanggal Uang Masuk</div><div class="v">' + esc(fmtCekTanggalTampilan(row.tanggal,row.tglDate)) + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">No. Faktur Uang Masuk</div><div class="v">' + esc(faktur) + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">Total Uang Masuk</div><div class="v" style="color:var(--accent)">' + fmt(totalBayar) + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">Cash</div><div class="v">' + fmt(totalCash) + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">Transfer</div><div class="v">' + fmt(totalTf) + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">Jumlah Baris Uang Masuk</div><div class="v">' + umRows.length.toLocaleString('id-ID') + '</div></div>' +
+                    '<div class="modal-stat"><div class="l">Status Terakhir</div><div class="v">' + esc(status) + '</div></div>';
+
+                let detailHtml = '<div style="margin-bottom:8px;font-weight:700;">Detail catatan Uang Masuk</div>' +
+                    '<div style="overflow:auto;max-height:360px;border:1px solid var(--border);border-radius:8px;">' +
+                    '<table class="hist-table" style="min-width:900px;">' +
+                    '<thead><tr><th>Tgl Masuk</th><th>Sheet</th><th>Bagian</th><th>Sales</th><th>Customer</th><th>Alamat</th><th class="num">Tagihan</th><th class="num">Cash</th><th class="num">TF</th><th class="num">Bayar</th><th>Status</th></tr></thead><tbody>';
+                if (!umRows.length) {
+                    detailHtml += '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:18px;">Detail Uang Masuk tidak tersedia.</td></tr>';
+                } else {
+                    umRows.forEach(r => {
+                        const cash = (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0);
+                        const tf = (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0);
+                        detailHtml += '<tr>' +
+                            '<td>' + esc(fmtCekTanggalTampilan(r.date || r.tanggal, parseSalesDate(r.date || r.tanggal))) + '</td>' +
+                            '<td>' + esc(r.sheet || '—') + '</td>' +
+                            '<td>' + esc(r.section || '—') + '</td>' +
+                            '<td>' + esc(r.sales || '—') + '</td>' +
+                            '<td>' + esc(r.toko || '—') + '</td>' +
+                            '<td>' + esc(r.alamat || '—') + '</td>' +
+                            '<td class="num">' + fmt(Number(r.tagihan)||0) + '</td>' +
+                            '<td class="num">' + fmt(cash) + '</td>' +
+                            '<td class="num">' + fmt(tf) + '</td>' +
+                            '<td class="num"><strong>' + fmt(cash+tf) + '</strong></td>' +
+                            '<td>' + esc(r.status || '—') + '</td>' +
+                            '</tr>';
+                    });
+                }
+                detailHtml += '</tbody></table></div>' +
+                    '<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(217,119,6,.10);border:1px solid rgba(217,119,6,.35);color:var(--yellow);font-size:.82rem;line-height:1.5;">' +
+                    '<b>⚠ Perlu dicek:</b> Nomor faktur ini ada di <b>Uang Masuk</b>, tetapi tidak ditemukan di <b>Data Penjualan</b>. Nilai di atas berasal dari catatan Uang Masuk, bukan dari penjualan.</div>';
+                document.getElementById('cekTempoModalConclusion').innerHTML = detailHtml;
+                document.getElementById('cekTempoDetailModal').classList.add('open');
+                return;
+            }
+
+            const nominal = Number(row.nominal) || 0;
+            const tagihanTerakhir = Number(row.tagihanUM) || 0;
+            const paid = Number(row.paidAmount) || 0;
             const sisa = Math.max(0, tagihanTerakhir - paid);
             const due = row.jatuhTempo instanceof Date && !isNaN(row.jatuhTempo) ? row.jatuhTempo : null;
-            // Tanggal transaksi ditampilkan hasil NORMALISASI (sama seperti kolom
-            // "Tgl Transaksi" di tabel), bukan teks mentah row.tanggal. Teks mentah
-            // dari sumber data kadang berurutan MM/DD, jadi kalau ditampilkan apa
-            // adanya bisa terbaca sebagai tanggal lain (mis. "08/05/2026" terlihat
-            // seperti 8 Mei, padahal sebenarnya 5 Agustus) meski jatuh tempo yang
-            // dihitung sistem sudah benar berdasarkan tanggal aslinya.
             const ID_HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
             const tglDateForDisplay = row.tglDate instanceof Date && !isNaN(row.tglDate) ? row.tglDate : parseSalesDate(row.tanggal);
             const tglTransaksiStr = fmtCekTanggalTampilan(row.tanggal, row.tglDate);
             const tglTransaksiFull = tglDateForDisplay ? (ID_HARI[tglDateForDisplay.getDay()] + ', ' + tglTransaksiStr) : tglTransaksiStr;
-            // isOverdue & paymentStatus sudah dihitung sekali di buildCekFakturList
-            // (satu sumber logika untuk tabel, kartu, filter, dan modal ini).
             const overdueDays = Number(row.umurOverdue) || 0;
             const sudahJT = !!row.isOverdue;
             const isTitip = row.statusCek === 'Titip' || row.paymentStatus === 'Titip';
@@ -2007,32 +2059,19 @@
             const expectedDueStr = dateCheck.expectedDue ? fmtDateID(dateCheck.expectedDue) : '—';
 
             document.getElementById('cekTempoModalTitle').textContent = 'Detail Faktur ' + faktur;
-            document.getElementById('cekTempoModalSub').textContent =
-                (row.customer || '—') + (row.alamat ? ' · ' + row.alamat : '');
+            document.getElementById('cekTempoModalSub').textContent = (row.customer || '—') + (row.alamat ? ' · ' + row.alamat : '');
             document.getElementById('cekTempoCustomer').textContent = row.customer || '—';
             document.getElementById('cekTempoSales').textContent = row.sales || '—';
             document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
-
             let statusHtml = '';
-            if (isLunas) {
-                statusHtml += '<span class="badge badge-lunas">LUNAS</span>';
-            } else if (isTitip) {
-                statusHtml += '<span class="badge badge-titip">TITIP / SEBAGIAN</span>';
-            } else if (row.statusCek === 'Overdue') {
-                statusHtml += '<span class="badge badge-retur">OVERDUE ' + overdueDays + ' hr</span>';
-            } else {
-                statusHtml += '<span class="badge badge-tf">BELUM JATUH TEMPO</span>';
-            }
-            if (isTitip && sudahJT && !isLunas) {
-                statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;">SUDAH JATUH TEMPO · OVERDUE ' + overdueDays + ' hr</span>';
-            } else if (!isLunas && sudahJT) {
-                statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;">SUDAH JATUH TEMPO</span>';
-            }
-            if (dateAnomaly) {
-                statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;background:#7c2d12;color:#fff;">⚠ TANGGAL ANOMALI</span>';
-            }
+            if (isLunas) statusHtml += '<span class="badge badge-lunas">LUNAS</span>';
+            else if (isTitip) statusHtml += '<span class="badge badge-titip">TITIP / SEBAGIAN</span>';
+            else if (row.statusCek === 'Overdue') statusHtml += '<span class="badge badge-retur">OVERDUE ' + overdueDays + ' hr</span>';
+            else statusHtml += '<span class="badge badge-tf">BELUM JATUH TEMPO</span>';
+            if (isTitip && sudahJT && !isLunas) statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;">SUDAH JATUH TEMPO · OVERDUE ' + overdueDays + ' hr</span>';
+            else if (!isLunas && sudahJT) statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;">SUDAH JATUH TEMPO</span>';
+            if (dateAnomaly) statusHtml += ' <span class="badge badge-retur" style="margin-left:6px;background:#7c2d12;color:#fff;">⚠ TANGGAL ANOMALI</span>';
             document.getElementById('cekTempoModalStatus').innerHTML = statusHtml;
-
             document.getElementById('cekTempoModalStats').innerHTML =
                 '<div class="modal-stat"><div class="l">Tanggal Transaksi</div><div class="v">' + esc(tglTransaksiFull || '—') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Jatuh Tempo</div><div class="v">' + esc(row.jatuhTempoStr || '—') + '</div></div>' +
@@ -2043,31 +2082,15 @@
                 '<div class="modal-stat"><div class="l">Bayar Tagihan Terakhir</div><div class="v" style="color:var(--green)">' + fmt(paid) + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Sisa Tagihan Terakhir</div><div class="v" style="color:' + (sisa > 0 ? 'var(--yellow)' : 'var(--green)') + '">' + (sisa > 0 ? fmt(sisa) : '0 (lunas)') + '</div></div>' +
                 '<div class="modal-stat"><div class="l">Umur Overdue</div><div class="v" style="color:' + (sudahJT && !isLunas ? 'var(--red)' : 'var(--text)') + '">' + (sudahJT && !isLunas ? overdueDays + ' hari' : '—') + '</div></div>';
-
             let conclusion = '';
-            if (isLunas) {
-                conclusion = '<strong>Kesimpulan:</strong> Faktur sudah <b>LUNAS</b>.';
-            } else if (isTitip && sudahJT) {
-                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>, tetapi faktur <b>sudah jatuh tempo</b> dan sisa tagihan terakhir <b>' + fmt(sisa) + '</b>. Jadi ini perlu ditindaklanjuti sebagai <b>TITIP YANG SUDAH OVERDUE</b>.';
-            } else if (isTitip) {
-                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b> dan jatuh tempo masih <b>' + esc(row.jatuhTempoStr || '—') + '</b>.';
-            } else if (sudahJT) {
-                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas dan <b>sudah overdue ' + overdueDays + ' hari</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
-            } else {
-                conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas tetapi <b>belum jatuh tempo</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
-            }
-
-            if (dateAnomaly) {
-                conclusion += '<br><div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);color:var(--red);"><b>⚠ ANOMALI TANGGAL</b><br>' + esc(dateCheck.reason || 'Tanggal jatuh tempo tidak sesuai.') + '<br><b>Seharusnya:</b> ' + esc(expectedDueStr) + ' (' + CEK_TEMPO_DAYS + ' hari setelah transaksi).</div>';
-            }
-
-            if (row.fromSales === false) {
-                conclusion += '<br><div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(217,119,6,.10);border:1px solid rgba(217,119,6,.35);color:var(--yellow);"><b>⚠ TIDAK DITEMUKAN DI DATA PENJUALAN</b><br>Faktur ini hanya tercatat di <b>Data Uang Masuk</b> (bagian Piutang) — sistem sudah mencoba mencocokkan nomor faktur ini persis maupun mirip (fuzzy, berdasarkan toko/sales/tanggal/nominal) ke <b>seluruh</b> Data Penjualan, tapi tidak ketemu. Karena itu semua angka di atas (Nilai Faktur Awal, Tanggal Transaksi, Jatuh Tempo) dihitung murni dari catatan Uang Masuk, bukan dari baris penjualan. Kalau field <b>Bayar Tagihan Terakhir</b> menunjukkan 0, artinya memang belum ada uang masuk yang tercatat untuk tagihan ini — bukan data yang disembunyikan. Cek apakah faktur ini sudah diinput di Data Penjualan, atau nomornya salah ketik.</div>';
-            } else if (row.paymentMatch === 'FUZZY') {
-                conclusion += '<br><span style="color:var(--muted);">🔎 Pembayaran ditemukan melalui rekonsiliasi Customer/Alamat/Sales/Nominal. No.Faktur di Uang Masuk: <b>' + esc(row.paymentMatchFaktur || '—') + '</b>.</span>';
-            } else {
-                conclusion += '<br><span style="color:var(--muted);">🔗 Pembayaran terhubung melalui No.Faktur.</span>';
-            }
+            if (isLunas) conclusion = '<strong>Kesimpulan:</strong> Faktur sudah <b>LUNAS</b>.';
+            else if (isTitip && sudahJT) conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>, tetapi faktur <b>sudah jatuh tempo</b> dan sisa tagihan terakhir <b>' + fmt(sisa) + '</b>. Jadi ini perlu ditindaklanjuti sebagai <b>TITIP YANG SUDAH OVERDUE</b>.';
+            else if (isTitip) conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> menerima pembayaran <b>' + fmt(paid) + '</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b> dan jatuh tempo masih <b>' + esc(row.jatuhTempoStr || '—') + '</b>.';
+            else if (sudahJT) conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas dan <b>sudah overdue ' + overdueDays + ' hari</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
+            else conclusion = '<strong>Kesimpulan:</strong> Tagihan terakhir sebesar <b>' + fmt(tagihanTerakhir) + '</b> belum lunas tetapi <b>belum jatuh tempo</b>. Sisa tagihan terakhir <b>' + fmt(sisa) + '</b>.';
+            if (dateAnomaly) conclusion += '<br><div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);color:var(--red);"><b>⚠ ANOMALI TANGGAL</b><br>' + esc(dateCheck.reason || 'Tanggal jatuh tempo tidak sesuai.') + '<br><b>Seharusnya:</b> ' + esc(expectedDueStr) + ' (' + CEK_TEMPO_DAYS + ' hari setelah transaksi).</div>';
+            if (row.paymentMatch === 'FUZZY') conclusion += '<br><span style="color:var(--muted);">🔎 Pembayaran ditemukan melalui rekonsiliasi Customer/Alamat/Sales/Nominal. No.Faktur di Uang Masuk: <b>' + esc(row.paymentMatchFaktur || '—') + '</b>.</span>';
+            else conclusion += '<br><span style="color:var(--muted);">🔗 Pembayaran terhubung melalui No.Faktur.</span>';
             document.getElementById('cekTempoModalConclusion').innerHTML = conclusion;
             document.getElementById('cekTempoDetailModal').classList.add('open');
         }
@@ -3661,7 +3684,8 @@
                 if (bl) bl.style.display = 'none';
                 if (multiWrap) multiWrap.style.display = '';
                 if (hint) hint.style.display = 'block';
-                const tempoMonths = [...new Set((salesRows || []).map(r => r.month).filter(Boolean))];
+                const sourceMonths = sub === 'nosales' ? [...new Set((allRows || []).map(r => r.month).filter(Boolean))] : [...new Set((salesRows || []).map(r => r.month).filter(Boolean))];
+                const tempoMonths = sourceMonths;
                 const activeTempoMonth = preferredMonth(tempoMonths);
                 cekSelectedBulanMulti = activeTempoMonth ? [activeTempoMonth] : ['all'];
                 cekBulanUserSet = false;
@@ -4027,6 +4051,156 @@
             const salesMap = rebuildSalesFakturMap();
             const today = new Date();
             let out = [];
+
+            // ================================================================
+            // TANPA PENJUALAN
+            // Sumber utama HARUS Data Uang Masuk. Jangan membangun daftar dari
+            // salesRows lalu mencari yang tidak ada di UM, karena itu adalah
+            // logika kebalikan ("Belum Ada Uang Masuk").
+            // ================================================================
+            if (payType === 'NOSALES') {
+                const umByFaktur = new Map();
+                const salesNormMap = new Map();
+                for (const [fk, s] of salesMap.entries()) {
+                    const nk = normFakturKey(fk);
+                    if (nk) {
+                        if (!salesNormMap.has(nk)) salesNormMap.set(nk, new Set());
+                        salesNormMap.get(nk).add(fk);
+                    }
+                }
+
+                // Kelompokkan langsung dari SEMUA baris Uang Masuk.
+                for (const r of (allRows || [])) {
+                    const fk = String(r.faktur || '').trim();
+                    if (!fk) continue;
+                    if (!umByFaktur.has(fk)) {
+                        umByFaktur.set(fk, {
+                            noFaktur: fk,
+                            rowsUM: [],
+                            nominal: 0,
+                            paidAmount: 0,
+                            cashTotal: 0,
+                            tfTotal: 0,
+                            tagihanUM: 0,
+                            tanggal: '',
+                            tglDate: null,
+                            sales: '',
+                            customer: '',
+                            alamat: '',
+                            pembayaran: 'Piutang',
+                            statusCek: 'Belum Bayar',
+                            month: '',
+                            umMonths: new Set(),
+                            fromSales: false
+                        });
+                    }
+                    const g = umByFaktur.get(fk);
+                    const paid = (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
+                        (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
+                    const td = parseSalesDate(r.date || r.tanggal || '');
+                    const rowMonth = r.month || monthNameFromDate(td) || '';
+                    g.rowsUM.push(r);
+                    g.paidAmount += paid;
+                    g.nominal += paid;
+                    g.cashTotal += (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0);
+                    g.tfTotal += (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0);
+                    g.tagihanUM = Number(r.tagihan) || g.tagihanUM || 0;
+                    if (rowMonth) g.umMonths.add(rowMonth);
+                    // Gunakan baris Uang Masuk TERAKHIR sebagai identitas/tanggal utama.
+                    const rowSort = dateSortKey(r.date, r.sheet);
+                    if (!g._latestSort || rowSort >= g._latestSort) {
+                        g._latestSort = rowSort;
+                        g.tanggal = r.date || r.tanggal || '';
+                        g.tglDate = td;
+                        g.month = rowMonth || g.month;
+                        g.sales = r.sales || g.sales || '';
+                        g.customer = (r.toko && r.toko !== '—') ? r.toko : (g.customer || '');
+                        g.alamat = (r.alamat && r.alamat !== '—') ? r.alamat : (g.alamat || '');
+                        g.pembayaran = String(r.section || r.status || '—');
+                        g.sectionUM = r.section || '—';
+                        g.latestStatus = r.status || '—';
+                        g.statusCek = r.status === 'LUNAS' ? 'Lunas' : (r.status === 'TITIP' ? 'Titip' : 'Belum Bayar');
+                    }
+                }
+
+                const candidates = [];
+                const unresolved = [];
+                for (const g of umByFaktur.values()) {
+                    // Exact match: faktur memang ada di Data Penjualan.
+                    if (salesMap.has(g.noFaktur)) continue;
+                    // Normalized match: beda spasi/strip/leading-zero/case saja.
+                    const nk = normFakturKey(g.noFaktur);
+                    if (nk && salesNormMap.has(nk)) continue;
+                    // Kandidat untuk fuzzy: tetap sumbernya Uang Masuk.
+                    candidates.push(g);
+                    unresolved.push(g);
+                }
+
+                // Fuzzy hanya untuk memastikan apakah faktur UM sebenarnya sudah ada
+                // di Penjualan dengan nomor berbeda. Jika tidak ditemukan, tetap NOSALES.
+                const usedUM = new Set();
+                const fuzzyResolved = await resolveCekFuzzyMatchesGlobally(candidates, umByFaktur, usedUM);
+                const fuzzyMatchedSales = new Set();
+                for (const [gKey] of fuzzyResolved.entries()) fuzzyMatchedSales.add(gKey);
+
+                // Karena resolver di atas mencari dari UM, bukan sales, untuk NOSALES
+                // kita lakukan verifikasi fuzzy langsung terhadap salesMap juga.
+                // Hanya pasangan yang cukup kuat yang dikeluarkan dari Tanpa Penjualan.
+                const salesCandidates = [...salesMap.values()];
+                for (const g of unresolved) {
+                    let found = false;
+                    const gFields = { customer: g.customer, alamat: g.alamat, sales: g.sales, tglDate: g.tglDate, faktur: g.noFaktur };
+                    let best = null;
+                    for (const s of salesCandidates) {
+                        const amountScore = cekAmountScore(g.paidAmount || g.nominal, s.nominal);
+                        const res = computeCekFuzzyScore(gFields, {
+                            customer: s.customer, alamat: s.alamat, sales: s.sales, tglDate: s.tglDate, faktur: s.noFaktur
+                        }, amountScore);
+                        if (!res) continue;
+                        if (!best || res.score > best.score) best = { s, res };
+                    }
+                    if (best) {
+                        // Jika ada kandidat kuat dan tidak ambigu, anggap sudah ada di Penjualan.
+                        let secondScore = -Infinity;
+                        for (const s of salesCandidates) {
+                            if (s.noFaktur === best.s.noFaktur) continue;
+                            const amountScore = cekAmountScore(g.paidAmount || g.nominal, s.nominal);
+                            const res = computeCekFuzzyScore(gFields, {
+                                customer: s.customer, alamat: s.alamat, sales: s.sales, tglDate: s.tglDate, faktur: s.noFaktur
+                            }, amountScore);
+                            if (res) secondScore = Math.max(secondScore, res.score);
+                        }
+                        if (secondScore === -Infinity || (best.res.score - secondScore) >= CEK_FUZZY_MIN_MARGIN) {
+                            found = true;
+                        }
+                    }
+                    if (found) continue;
+
+                    g.jatuhTempo = null;
+                    g.jatuhTempoStr = '—';
+                    g.isOverdue = false;
+                    g.umurOverdue = 0;
+                    g.umurOverdueStr = '—';
+                    g.items = 0;
+                    g.tagihanUMDate = g.tanggal;
+                    // Nominal pada tab ini adalah TOTAL UANG MASUK yang benar-benar tercatat.
+                    g.nominal = g.paidAmount;
+                    // Simpan detail asli untuk modal.
+                    g.umDetail = g.rowsUM.slice().sort((a,b) => dateSortKey(a.date,a.sheet) - dateSortKey(b.date,b.sheet));
+                    delete g.rowsUM;
+                    delete g.umMonthsTemp;
+                    out.push(g);
+                }
+
+                out.sort((a,b) => {
+                    const ta = a.tglDate ? a.tglDate.getTime() : 0;
+                    const tb = b.tglDate ? b.tglDate.getTime() : 0;
+                    return tb - ta;
+                });
+                cekFakturCache[cacheKey] = out;
+                cekFakturCacheDirty[cacheKey] = false;
+                return out;
+            }
             if (payType === 'ANOMALI') {
                 // Kumpulkan semua No.Faktur yang ADA di Data Uang Masuk (semua section).
                 // Dipetakan JUGA lewat normFakturKey supaya beda format penomoran murni
@@ -4469,8 +4643,37 @@
                         '<td class="muted">' + esc(r.alamat) + '</td>' +
                         '</tr>';
                 }
-                if (isTempo || isNosales) {
+                if (isNosales) {
                     return '<tr>' +
+                        '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
+                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail Uang Masuk" onclick="openCekTempoDetail(encodeURIComponent(' + String(r.noFaktur || '') + '))">' + esc(r.noFaktur) + '</span></td>' +
+                        '<td class="toko">' + esc(r.customer) + '</td>' +
+                        '<td>' + esc(r.sales) + '</td>' +
+                        '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
+                        '<td class="num">' + fmt(r.cashTotal || 0) + '</td>' +
+                        '<td class="num">' + fmt(r.tfTotal || 0) + '</td>' +
+                        '<td>' + esc(r.latestStatus || r.statusCek || '—') + '</td>' +
+                        '<td>' + esc(r.sectionUM || r.pembayaran || '—') + '</td>' +
+                        '<td class="muted">' + esc(r.alamat) + '</td>' +
+                        '<td class="num">' + ((r.umDetail || []).length).toLocaleString('id-ID') + '</td>' +
+                        '</tr>';
+                }
+                if (isTempo) {
+                    return '<tr>' +
+                        '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
+                        '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(' + String(r.noFaktur || '') + '))">' + esc(r.noFaktur) + '</span>' + notInSalesBadge(r) + '</td>' +
+                        '<td class="toko">' + esc(r.customer) + '</td>' +
+                        '<td>' + esc(r.sales) + '</td>' +
+                        '<td class="num"><strong>' + (r.nominal || 0).toLocaleString('id-ID') + '</strong></td>' +
+                        '<td>' + esc(r.jatuhTempoStr) + '</td>' +
+                        '<td>' + statusBadgeCek(r) + '</td>' +
+                        '<td class="num">' + (r.isOverdue ? ('<strong style="color:var(--red)">' + esc(r.umurOverdueStr) + '</strong>') : '—') + '</td>' +
+                        '<td class="num">' + (r.paidAmount ? r.paidAmount.toLocaleString('id-ID') : '—') + '</td>' +
+                        '<td class="muted">' + esc(r.alamat) + '</td>' +
+                        '<td>' + esc(r.pembayaran || 'Tempo') + '</td>' +
+                        '</tr>';
+                }
+                return '<tr>' +
                         '<td>' + esc(fmtCekTanggalTampilan(r.tanggal, r.tglDate)) + '</td>' +
                         '<td class="faktur"><span class="faktur-link" title="Klik untuk melihat detail" onclick="openCekTempoDetail(encodeURIComponent(\'' + String(r.noFaktur || '') + '\'))">' + esc(r.noFaktur) + '</span>' + (isNosales ? '' : notInSalesBadge(r)) + '</td>' +
                         '<td class="toko">' + esc(r.customer) + '</td>' +
@@ -4754,6 +4957,7 @@
                     // Tempo/Tanpa Penjualan: cocokkan bulan transaksi ATAU bulan jatuh tempo
                     // (transaksi Juli tgl 20+ sering jatuh tempo di Agustus)
                     rows = rows.filter(r => {
+                        if (isNosales && r.umDetail && r.umDetail.some(u => setBulan.has(u.month || monthNameFromDate(parseSalesDate(u.date || u.tanggal || ''))))) return true;
                         if (setBulan.has(r.month)) return true;
                         const dueMonth = r.jatuhTempo ? monthNameFromDate(r.jatuhTempo) : null;
                         if (dueMonth && setBulan.has(dueMonth)) return true;
@@ -4880,7 +5084,12 @@
             empty.style.display = 'none';
             wrap.style.display = 'block';
 
-            if (isTempo || isNosales) {
+            if (isNosales) {
+                thead.innerHTML = '<tr>' +
+                    '<th>Tgl Masuk</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
+                    '<th class="num">Total Uang Masuk</th><th class="num">Cash</th><th class="num">TF</th>' +
+                    '<th>Status</th><th>Bagian</th><th>Alamat</th><th class="num">Jml Catatan</th></tr>';
+            } else if (isTempo) {
                 thead.innerHTML = '<tr>' +
                     '<th>Tgl Transaksi</th><th>No Faktur</th><th>Customer</th><th>Sales</th>' +
                     '<th class="num">Nominal</th><th>Jatuh Tempo</th><th>Status</th>' +
@@ -4924,7 +5133,7 @@
             document.getElementById('cekSearchInput').value = '';
             document.getElementById('cekFilterStatus').value = 'all';
             const bl = document.getElementById('cekFilterBulan');
-            const cekMonths = [...new Set(((cekSub === 'tempo' || cekSub === 'anomali' || cekSub === 'nosales') ? (salesRows || []) : (allRows || [])).map(r => r.month).filter(Boolean))];
+            const cekMonths = [...new Set(((cekSub === 'tempo' || cekSub === 'anomali') ? (salesRows || []) : (cekSub === 'nosales' ? (allRows || []) : (allRows || []))).map(r => r.month).filter(Boolean))];
             const activeCekMonth = preferredMonth(cekMonths);
             if (bl) bl.value = activeCekMonth || 'all';
             cekSelectedBulanMulti = activeCekMonth ? [activeCekMonth] : ['all'];
@@ -4947,18 +5156,18 @@
             const rows = (scope === 'all') ? await buildCekFakturList(payType) : lastCekRows;
             if (!rows.length) { alert('Tidak ada data untuk diunduh.'); return; }
             const aoa = [];
-            if (isTempo || isNosales) {
+            if (isNosales) {
+                aoa.push(['Tgl Masuk', 'No Faktur', 'Customer', 'Sales', 'Total Uang Masuk', 'Cash', 'TF', 'Status', 'Bagian', 'Alamat', 'Jml Catatan']);
+                rows.forEach(r => {
+                    aoa.push([r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0, r.cashTotal || 0, r.tfTotal || 0, r.latestStatus || r.statusCek || '', r.sectionUM || r.pembayaran || '', r.alamat || '', (r.umDetail || []).length]);
+                });
+            } else if (isTempo) {
                 aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Jatuh Tempo', 'Status',
                     'Umur Overdue (hari)', 'Sudah Bayar', 'Alamat', 'Pembayaran'
                 ]);
                 rows.forEach(r => {
                     const st = r.isOverdue ? (r.statusCek.toUpperCase() + ' · OVERDUE ' + r.umurOverdue + ' hr') : r.statusCek;
-                    aoa.push([
-                        r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0,
-                        r.jatuhTempoStr, st,
-                        r.isOverdue ? r.umurOverdue : '',
-                        r.paidAmount || 0, r.alamat || '', r.pembayaran || 'Tempo'
-                    ]);
+                    aoa.push([r.tanggal || '', r.noFaktur, r.customer, r.sales, r.nominal || 0, r.jatuhTempoStr, st, r.isOverdue ? r.umurOverdue : '', r.paidAmount || 0, r.alamat || '', r.pembayaran || 'Tempo']);
                 });
             } else if (isAnomali) {
                 aoa.push(['Tgl Transaksi', 'No Faktur', 'Customer', 'Sales', 'Nominal', 'Tipe (Cash/Tempo)',
