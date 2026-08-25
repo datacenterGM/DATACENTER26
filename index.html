@@ -771,7 +771,7 @@
                 <div class="hint">
                     Sub-tab <b>Cash</b> = faktur <b>Cash Dropping</b> dari tab Uang Masuk.<br>
                     Sub-tab <b>Tempo</b> = faktur dari Data Penjualan yang pembayarannya <b>bukan Cash</b> (kosong / Tempo / Kredit) <b>dan ketemu pasangannya</b> di Data Penjualan.<br>
-                    Sub-tab <b>Tanpa Penjualan</b> = faktur Piutang yang <b>ada di Uang Masuk</b> tapi <b>tidak ditemukan sama sekali</b> di Data Penjualan (exact maupun fuzzy match) — perlu dicek manual, kemungkinan lupa diinput atau nomor faktur beda jauh.<br>
+                    Sub-tab <b>Tanpa Penjualan</b> = faktur Piutang <b>dan Cash Dropping</b> yang <b>ada di Uang Masuk</b> tapi <b>tidak ditemukan sama sekali</b> di Data Penjualan (exact maupun fuzzy match) — perlu dicek manual, kemungkinan lupa diinput atau nomor faktur beda jauh.<br>
                     Sub-tab <b>Belum Ada Uang Masuk</b> = faktur yang tercatat di <b>Data Penjualan</b> tetapi <b>tidak ditemukan sama sekali</b> di <b>Data Uang Masuk</b> setelah exact, normalized, dan fuzzy match — jadi ini daftar khusus yang perlu ditindaklanjuti.<br>
                     Pastikan di tab <b>Data Penjualan</b> sudah ada data dan kolom Pembayaran terisi (atau biarkan kosong agar dianggap Tempo).
                 </div>
@@ -4210,6 +4210,102 @@
                         umDetail: u.umDetail
                     });
                 }
+
+                // ------------------------------------------------------------
+                // TAMBAHAN: Cash Dropping ikut dicek "Tanpa Penjualan" juga.
+                // Alurnya disamakan persis dengan Piutang di atas (exact/normalized
+                // match dulu, lalu fuzzy match pakai infrastruktur & fuzzyUsedKeys
+                // yang SAMA supaya satu baris Data Penjualan tidak "dipakai" dua
+                // kali oleh Piutang & Cash Dropping sekaligus). Cash Dropping tidak
+                // punya konsep jatuh tempo (dibayar saat transaksi), jadi tidak ada
+                // status Overdue untuk baris-baris ini -- statusnya Lunas/Titip/Cash.
+                // ------------------------------------------------------------
+                const umByFakturCash = new Map();
+                for (const r of (allRows || [])) {
+                    const fk = String(r.faktur || '').trim();
+                    if (!fk) continue;
+                    const sec = String(r.section || '').toUpperCase();
+                    if (!sec.includes('DROPPING')) continue;
+                    if (!umByFakturCash.has(fk)) {
+                        umByFakturCash.set(fk, {
+                            noFaktur: fk, paidAmount: 0, hasLunas: false, hasTitip: false,
+                            dateLabel: '', salesName: '', toko: '', alamat: '',
+                            latestSort: null, latestDateLabel: '', latestTagihan: 0,
+                            latestPaidAmount: 0, latestStatus: '', cashTotal: 0, tfTotal: 0,
+                            umDetail: []
+                        });
+                    }
+                    const u = umByFakturCash.get(fk);
+                    const rowPaid = (Number(r.minyakCash)||0) + (Number(r.minyakTf)||0) +
+                        (Number(r.rupaCash)||0) + (Number(r.rupaTf)||0);
+                    const rowSort = dateSortKey(r.date, r.sheet);
+                    if (u.latestSort == null || rowSort >= u.latestSort) {
+                        u.latestSort = rowSort;
+                        u.latestDateLabel = r.date || '';
+                        u.latestTagihan = Number(r.tagihan) || 0;
+                        u.latestPaidAmount = rowPaid;
+                        u.latestStatus = r.status || '';
+                    }
+                    u.paidAmount += rowPaid;
+                    u.cashTotal += (Number(r.minyakCash)||0) + (Number(r.rupaCash)||0);
+                    u.tfTotal += (Number(r.minyakTf)||0) + (Number(r.rupaTf)||0);
+                    if (r.status === 'LUNAS') u.hasLunas = true;
+                    if (r.status === 'TITIP') u.hasTitip = true;
+                    if (!u.dateLabel && r.date) u.dateLabel = r.date;
+                    if (!u.salesName && r.sales) u.salesName = r.sales;
+                    if (!u.toko && r.toko && r.toko !== '—') u.toko = r.toko;
+                    if (!u.alamat && r.alamat && r.alamat !== '—') u.alamat = r.alamat;
+                    u.umDetail.push(r);
+                }
+
+                const stillUnresolvedCash = [];
+                for (const [fk, u] of umByFakturCash.entries()) {
+                    if (salesMap.has(fk)) continue;
+                    const nk = normFakturKey(fk);
+                    if (nk && salesNorm.has(nk)) continue;
+                    const tglDate = parseSalesDate(u.latestDateLabel || u.dateLabel);
+                    stillUnresolvedCash.push({
+                        noFaktur: fk, customer: u.toko, alamat: u.alamat, sales: u.salesName,
+                        tglDate, nominal: u.latestTagihan || u.latestPaidAmount || 0
+                    });
+                }
+
+                const fuzzyResolvedCash = await resolveCekFuzzyMatchesGlobally(stillUnresolvedCash, salesAsCandidate, fuzzyUsedKeys);
+
+                for (const g of stillUnresolvedCash) {
+                    if (fuzzyResolvedCash.has(g.noFaktur)) continue; // ketemu via fuzzy -> bukan "Tanpa Penjualan"
+                    const u = umByFakturCash.get(g.noFaktur);
+                    const isLunas = u.hasLunas || (u.latestTagihan > 0 && u.latestPaidAmount >= u.latestTagihan - 1);
+                    const isTitip = !isLunas && (u.hasTitip || u.latestPaidAmount > 0);
+                    u.umDetail.sort((a,b) => dateSortKey(a.date,a.sheet) - dateSortKey(b.date,b.sheet));
+                    out.push({
+                        noFaktur: g.noFaktur,
+                        tanggal: u.latestDateLabel || u.dateLabel || '',
+                        tglDate: g.tglDate,
+                        sales: u.salesName || '',
+                        customer: u.toko || '',
+                        alamat: u.alamat || '',
+                        nominal: g.nominal,
+                        paidAmount: u.latestPaidAmount || 0,
+                        paidAmountHistory: u.paidAmount || 0,
+                        cashTotal: u.cashTotal || 0,
+                        tfTotal: u.tfTotal || 0,
+                        tagihanUM: u.latestTagihan || 0,
+                        tagihanUMDate: u.latestDateLabel || '',
+                        statusCek: isLunas ? 'Lunas' : (isTitip ? 'Titip' : 'Cash'),
+                        pembayaran: 'Dropping',
+                        month: monthNameFromDate(g.tglDate) || 'Lainnya',
+                        fromSales: false,
+                        jatuhTempo: null,
+                        jatuhTempoStr: '—',
+                        isOverdue: false,
+                        umurOverdue: 0,
+                        umurOverdueStr: '—',
+                        items: u.umDetail.length,
+                        umDetail: u.umDetail
+                    });
+                }
+
                 out.sort((a,b) => {
                     if (a.isOverdue && !b.isOverdue) return -1;
                     if (b.isOverdue && !a.isOverdue) return 1;
