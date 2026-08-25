@@ -2259,20 +2259,23 @@
                         <th>Tipe Bayar</th>
                         <th class="num">Nominal</th>
                         ${showJt ? '<th class="num">Hari JT</th>' : ''}
+                        <th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>`;
 
             filtered.forEach((r) => {
                 const daysOverdue = r.umurOverdue || 0;
+                const fakturEsc = String(r.noFaktur || '').replace(/'/g, "\\'");
                 html += `<tr>
-                    <td><span class="faktur-link" title="Klik untuk melihat detail" onclick="closeTempoJtModal();openCekAnomaliDetail(encodeURIComponent('${String(r.noFaktur || '').replace(/'/g, "\\'")}'))"><strong>${esc(r.noFaktur || '—')}</strong></span></td>
+                    <td><span class="faktur-link" title="Klik untuk melihat detail" onclick="closeTempoJtModal();openCekAnomaliDetail(encodeURIComponent('${fakturEsc}'))"><strong>${esc(r.noFaktur || '—')}</strong></span></td>
                     <td>${esc(r.tanggal || '—')}</td>
                     <td>${esc(r.customer || '—')}</td>
                     <td>${esc(r.sales || '—')}</td>
                     <td>${esc(r.tipeBayar || '—')}</td>
                     <td class="num">${fmt(r.nominal || 0)}</td>
                     ${showJt ? '<td class="num" style="color:var(--red)"><strong>' + daysOverdue + '+ hari</strong></td>' : ''}
+                    <td><button class="btn btn-outline" style="border-color:var(--red);color:var(--red);padding:3px 8px;font-size:0.72rem;white-space:nowrap;" title="Tandai faktur ini BATAL (kalau ternyata transaksi penjualannya batal)" onclick="markFakturBatalFromCardModal(encodeURIComponent('${fakturEsc}'), '${type}')">🚫 Batal</button></td>
                 </tr>`;
             });
 
@@ -2280,9 +2283,26 @@
             html += `<div style="margin-top:16px;padding:12px;background:var(--accent-soft);border-radius:8px;font-size:0.9rem;">
                 <strong>Total: ${filtered.length} faktur</strong> — Nominal: <strong>${fmt(filtered.reduce((s,r) => s + (r.nominal || 0), 0))}</strong>
             </div>`;
+            html += `<div style="margin-top:8px;font-size:0.78rem;color:var(--muted);">Kalau ternyata suatu faktur di atas adalah transaksi penjualan yang <b>batal/dibatalkan</b> (bukan lupa dicatat uang masuknya), klik <b>🚫 Batal</b> di baris tersebut. Faktur akan dikeluarkan dari Total Penjualan, Profit, dan daftar Belum Ada Uang Masuk — data asli tetap tersimpan dan bisa di-undo lewat filter "🚫 Transaksi Batal" di tab Data Penjualan.</div>`;
 
             document.getElementById('tempoJtContent').innerHTML = html;
             document.getElementById('tempoJtModal').classList.add('open');
+        }
+
+        // Tandai faktur BATAL langsung dari modal detail kartu Anomali, lalu refresh
+        // modal & tabel/kartu Cek Data supaya faktur yang baru ditandai BATAL langsung
+        // hilang dari daftar (tidak lagi dianggap anomali).
+        async function markFakturBatalFromCardModal(encodedFaktur, type) {
+            const faktur = decodeURIComponent(String(encodedFaktur || ''));
+            if (!confirm('Tandai faktur ' + faktur + ' sebagai BATAL?\n\nFaktur ini akan dikeluarkan dari Total Penjualan, Profit, dan daftar "Belum Ada Uang Masuk". Data asli TIDAK dihapus — bisa dilihat dan di-undo lewat filter "🚫 Transaksi Batal" di tab Data Penjualan.')) return;
+            const changed = setFakturBatalStatus(faktur, true);
+            if (!changed) return;
+            populateSalesFilters();
+            doSalesSearch();
+            if (typeof renderCekTable === 'function') await renderCekTable();
+            // Refresh isi modal pakai data anomali terbaru (yang sudah BATAL otomatis hilang)
+            openCekAnomaliCardModal(lastCekRows || [], type);
+            alert('Faktur ' + faktur + ' berhasil ditandai BATAL.');
         }
 
         function closeTempoJtModal() {
@@ -6438,7 +6458,7 @@
             switchTab, toggleTheme, toggleMenu, closeMenu, toggleSalesMenu, closeSalesMenu,
             doSearch, resetSearch, filterBySheet, clearData,
             openFakturModal, closeFakturModal, openCekTempoDetail, openCekUangMasukDetail, closeCekTempoDetail,
-            openCekAnomaliDetail, markFakturBatalFromModal, undoFakturBatal, setFakturBatalStatus,
+            openCekAnomaliDetail, markFakturBatalFromModal, markFakturBatalFromCardModal, undoFakturBatal, setFakturBatalStatus,
             openTempoJtModal, closeTempoJtModal, openHargaJualModal, closeHargaJualModal,
             downloadFakturExcel,
             doSalesSearch, resetSalesSearch, setSalesViewMode, switchSalesSub,
