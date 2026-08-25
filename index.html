@@ -704,7 +704,7 @@
                 <button class="cek-subtab-btn active" id="cekSubCash" onclick="switchCekSub('cash')">💵 Cash</button>
                 <button class="cek-subtab-btn" id="cekSubTempo" onclick="switchCekSub('tempo')">📅 Tempo</button>
                 <button class="cek-subtab-btn" id="cekSubNosales" onclick="switchCekSub('nosales')">🧩 Tanpa Penjualan</button>
-                <button class="cek-subtab-btn" id="cekSubAnomali" onclick="switchCekSub('anomali')">🚨 Anomali</button>
+                <button class="cek-subtab-btn" id="cekSubAnomali" onclick="switchCekSub('anomali')">🔴 Belum Ada Uang Masuk</button>
                 <div class="subtab-dl-wrap cek-download-wrap" id="cekDownloadWrap">
                     <button type="button" class="subtab-dl" id="cekDownloadBtn" onclick="toggleCekDownloadMenu(event)">📥 Download ▾</button>
                     <div class="subtab-dl-menu" id="cekDownloadMenu">
@@ -772,7 +772,7 @@
                     Sub-tab <b>Cash</b> = faktur <b>Cash Dropping</b> dari tab Uang Masuk.<br>
                     Sub-tab <b>Tempo</b> = faktur dari Data Penjualan yang pembayarannya <b>bukan Cash</b> (kosong / Tempo / Kredit) <b>dan ketemu pasangannya</b> di Data Penjualan.<br>
                     Sub-tab <b>Tanpa Penjualan</b> = faktur Piutang yang <b>ada di Uang Masuk</b> tapi <b>tidak ditemukan sama sekali</b> di Data Penjualan (exact maupun fuzzy match) — perlu dicek manual, kemungkinan lupa diinput atau nomor faktur beda jauh.<br>
-                    Sub-tab <b>Anomali</b> = faktur yang tercatat di <b>Data Penjualan</b> tapi <b>tidak ditemukan sama sekali</b> di <b>Data Uang Masuk</b> — kemungkinan besar belum dibayar / belum tercatat pembayarannya.<br>
+                    Sub-tab <b>Belum Ada Uang Masuk</b> = faktur yang tercatat di <b>Data Penjualan</b> tetapi <b>tidak ditemukan sama sekali</b> di <b>Data Uang Masuk</b> setelah exact, normalized, dan fuzzy match — jadi ini daftar khusus yang perlu ditindaklanjuti.<br>
                     Pastikan di tab <b>Data Penjualan</b> sudah ada data dan kolom Pembayaran terisi (atau biarkan kosong agar dianggap Tempo).
                 </div>
             </div>
@@ -3757,10 +3757,10 @@
                     '<option value="titip">Titip / Sebagian</option>' +
                     '<option value="not_in_sales">⚠ Tidak Ada di Data Penjualan</option>';
             } else if (sub === 'anomali') {
-                sel.innerHTML = '<option value="all">Semua Tipe</option>' +
-                    '<option value="anomali_cash">💵 Cash</option>' +
-                    '<option value="anomali_tempo">📅 Tempo (semua)</option>' +
-                    '<option value="anomali_tempo_overdue">🚨 Tempo · Sudah Jatuh Tempo</option>';
+                sel.innerHTML = '<option value="all">Semua</option>' +
+                    '<option value="anomali_cash">💵 Cash — belum ada uang masuk</option>' +
+                    '<option value="anomali_tempo">📅 Tempo — belum ada uang masuk</option>' +
+                    '<option value="anomali_tempo_overdue">🚨 Tempo — sudah jatuh tempo</option>';
             } else if (sub === 'nosales') {
                 sel.innerHTML = '<option value="all">Semua Status</option>' +
                     '<option value="lunas">Lunas</option>' +
@@ -3794,7 +3794,10 @@
         // (buildCekUangMasukReconciliation), supaya dua tempat itu selalu sepakat
         // soal faktur mana yang cocok dengan pembayaran mana. Sebelum ini keduanya
         // punya bobot & ambang beda sendiri-sendiri, jadi bisa saling kontradiksi.
-        const CEK_FUZZY_THRESHOLD = 11;
+        const CEK_FUZZY_THRESHOLD = 13;
+        // Fuzzy harus punya keunggulan yang jelas. Jika dua kandidat hampir sama,
+        // jangan memilih secara otomatis karena risiko salah memasangkan pembayaran.
+        const CEK_FUZZY_MIN_MARGIN = 3;
 
         // Normalisasi No.Faktur untuk perbandingan yang toleran terhadap beda
         // format penomoran antar file (leading zero, spasi, strip/garis miring,
@@ -3927,14 +3930,34 @@
 
             pairs.sort((x, y) => y.score - x.score);
 
+            // Jangan lagi memakai prinsip sederhana "skor tertinggi menang".
+            // Untuk setiap faktur penjualan, lihat kandidat terbaik dan runner-up.
+            // Jika selisihnya kecil, statusnya dibiarkan belum teridentifikasi sehingga
+            // pengguna dapat memeriksa manual. Ini penting untuk typo No.Faktur ketika
+            // toko/sales/alamat yang sama mempunyai beberapa transaksi.
+            const byG = new Map();
+            for (const pair of pairs) {
+                let arr = byG.get(pair.g.noFaktur);
+                if (!arr) { arr = []; byG.set(pair.g.noFaktur, arr); }
+                arr.push(pair);
+            }
+
             const resolvedByFaktur = new Map(); // g.noFaktur -> hasil match
             const assignedG = new Set();
             let assigned = 0;
-            for (const pair of pairs) {
-                if (usedKeys.has(pair.fk) || assignedG.has(pair.g.noFaktur)) continue;
-                usedKeys.add(pair.fk);
-                assignedG.add(pair.g.noFaktur);
-                resolvedByFaktur.set(pair.g.noFaktur, { key: pair.fk, data: pair.u, score: pair.score, match: pair.match });
+            for (const [gKey, arr] of byG.entries()) {
+                if (usedKeys.has(gKey) || !arr.length) continue;
+                const best = arr[0];
+                const second = arr.find(x => x.fk !== best.fk);
+                const margin = second ? (best.score - second.score) : Infinity;
+                if (second && margin < CEK_FUZZY_MIN_MARGIN) {
+                    // Ambigu: jangan tebak. Akan tetap muncul sebagai Belum Ada Uang Masuk.
+                    continue;
+                }
+                if (usedKeys.has(best.fk) || assignedG.has(gKey)) continue;
+                usedKeys.add(best.fk);
+                assignedG.add(gKey);
+                resolvedByFaktur.set(gKey, { key: best.fk, data: best.u, score: best.score, match: best.match, confidence: second ? 'HIGH' : 'HIGH_UNIQUE' });
                 assigned++;
                 if (assigned % 40 === 0) await yieldToMain();
             }
@@ -4628,10 +4651,25 @@
 
             candidatePairs.sort((a, b) => b.score - a.score);
 
+            // Sama seperti Cek Data: pembayaran dengan dua kandidat yang hampir sama
+            // tidak boleh dipaksa masuk ke salah satu faktur. Hanya kandidat yang
+            // jelas unggul yang boleh direkonsiliasi otomatis.
+            const pairsByPayment = new Map();
+            for (const pair of candidatePairs) {
+                let arr = pairsByPayment.get(pair.pg);
+                if (!arr) { arr = []; pairsByPayment.set(pair.pg, arr); }
+                arr.push(pair);
+            }
+
             const assignedPayments = new Set();
             let assigned = 0;
             for (const pair of candidatePairs) {
                 if (assignedPayments.has(pair.pg)) continue; // satu pembayaran cuma sekali
+                const arr = pairsByPayment.get(pair.pg) || [];
+                if (arr[0] !== pair) continue;
+                const second = arr.find(x => x.sp.noFaktur !== pair.sp.noFaktur);
+                const margin = second ? (pair.score - second.score) : Infinity;
+                if (second && margin < CEK_FUZZY_MIN_MARGIN) continue; // ambigu -> unidentified
                 const already = matchedBySales.get(pair.sp.noFaktur) || 0;
                 const remaining = Math.max(0, (Number(pair.sp.nominal) || 0) - already);
                 // Sisa saldo dicek ULANG di sini (bukan cuma prefilter di atas), karena
