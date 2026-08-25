@@ -497,6 +497,7 @@
             <div class="brand"><div><h1>DATACENTER</h1></div></div>
             <div class="header-right">
                 <div id="cloudSyncStatus" style="font-size:0.7rem;color:var(--muted);white-space:nowrap;"></div>
+                <button class="menu-btn" id="themeIconBtn" onclick="toggleTheme()" title="Ganti mode gelap/terang" style="font-size:1.05rem;padding:8px 11px;">🌙</button>
                 <div class="menu-wrap" id="menuWrap">
                     <button class="menu-btn" id="menuBtn" onclick="toggleMenu()">☰ Menu ▾</button>
                     <div class="menu-dd" id="menuDd">
@@ -528,9 +529,6 @@
                         <div class="menu-divider"></div>
                         <div class="menu-files" id="fileName">Data tersimpan (0 baris)</div>
                         <div class="menu-divider"></div>
-                        <button class="menu-item" onclick="toggleTheme(); closeMenu();">
-                            <span id="themeLabel">☀️ Mode terang</span>
-                        </button>
                         <button class="menu-item" id="installBtn" onclick="installApp(); closeMenu();" style="display:none;color:var(--accent);font-weight:700;">
                             📲 Install Aplikasi
                         </button>
@@ -6138,8 +6136,11 @@
 
         function updateThemeLabel() {
             const t = document.documentElement.getAttribute('data-theme');
-            const el = document.getElementById('themeLabel');
-            if (el) el.textContent = t === 'light' ? '🌙 Mode gelap' : '☀️ Mode terang';
+            const btn = document.getElementById('themeIconBtn');
+            if (btn) {
+                btn.textContent = t === 'light' ? '🌙' : '☀️';
+                btn.title = t === 'light' ? 'Ganti ke mode gelap' : 'Ganti ke mode terang';
+            }
         }
 
         (function initTheme() {
