@@ -892,11 +892,11 @@
             </div>
         </div>
 
-        <!-- Modal untuk Tempo Sudah JT Detail -->
+        <!-- Modal untuk Tempo Sudah JT Detail (dipakai juga untuk detail kartu Anomali lainnya) -->
         <div class="modal-overlay" id="tempoJtModal">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h2>🚨 Detail Faktur Tempo Sudah Jatuh Tempo</h2>
+                    <h2 id="tempoJtModalTitle">🚨 Detail Faktur Tempo Sudah Jatuh Tempo</h2>
                     <button class="modal-close" onclick="closeTempoJtModal()">✕</button>
                 </div>
                 <div id="tempoJtContent"></div>
@@ -2215,18 +2215,39 @@
             }
         }
 
-        // ---- Modal Tempo Sudah JT ----
+        // ---- Modal Tempo Sudah JT (dan detail kartu Anomali lain: Jml/Nominal/Cash) ----
         function openTempoJtModal(allRows) {
-            // Filter data yang Tempo dan Overdue (JT)
-            const tempoJtRows = allRows.filter(r => r.tipeBayar === 'Tempo' && r.isOverdue);
-            
-            if (!tempoJtRows.length) {
-                document.getElementById('tempoJtContent').innerHTML = 
-                    '<div style="padding:20px;text-align:center;color:var(--muted);">Tidak ada data Tempo Sudah JT</div>';
+            openCekAnomaliCardModal(allRows, 'tempo_jt');
+        }
+
+        // Modal generik untuk detail kartu-kartu di sub-tab "Belum Ada Uang Masuk" (Anomali).
+        // type: 'all' (Jml/Nominal Faktur Anomali), 'cash' (💵 Anomali Cash), 'tempo_jt' (🚨 Tempo Sudah JT)
+        function openCekAnomaliCardModal(allRows, type) {
+            let filtered, title, emptyMsg;
+            if (type === 'cash') {
+                filtered = allRows.filter(r => r.tipeBayar === 'Cash');
+                title = '💵 Detail Faktur Anomali — Cash';
+                emptyMsg = 'Tidak ada faktur Anomali dengan tipe Cash';
+            } else if (type === 'tempo_jt') {
+                filtered = allRows.filter(r => r.tipeBayar === 'Tempo' && r.isOverdue);
+                title = '🚨 Detail Faktur Tempo Sudah Jatuh Tempo';
+                emptyMsg = 'Tidak ada data Tempo Sudah JT';
+            } else {
+                filtered = allRows.slice();
+                title = '🔴 Detail Faktur Belum Ada Uang Masuk';
+                emptyMsg = 'Tidak ada data faktur Anomali';
+            }
+
+            document.getElementById('tempoJtModalTitle').textContent = title;
+
+            if (!filtered.length) {
+                document.getElementById('tempoJtContent').innerHTML =
+                    '<div style="padding:20px;text-align:center;color:var(--muted);">' + esc(emptyMsg) + '</div>';
                 document.getElementById('tempoJtModal').classList.add('open');
                 return;
             }
-            
+
+            const showJt = type === 'tempo_jt';
             // Susun tabel
             let html = `<table class="modal-table">
                 <thead>
@@ -2235,29 +2256,31 @@
                         <th>Tanggal</th>
                         <th>Customer</th>
                         <th>Sales</th>
+                        <th>Tipe Bayar</th>
                         <th class="num">Nominal</th>
-                        <th class="num">Hari JT</th>
+                        ${showJt ? '<th class="num">Hari JT</th>' : ''}
                     </tr>
                 </thead>
                 <tbody>`;
-            
-            tempoJtRows.forEach((r, idx) => {
+
+            filtered.forEach((r) => {
                 const daysOverdue = r.umurOverdue || 0;
                 html += `<tr>
-                    <td><strong>${esc(r.noFaktur || '—')}</strong></td>
+                    <td><span class="faktur-link" title="Klik untuk melihat detail" onclick="closeTempoJtModal();openCekAnomaliDetail(encodeURIComponent('${String(r.noFaktur || '').replace(/'/g, "\\'")}'))"><strong>${esc(r.noFaktur || '—')}</strong></span></td>
                     <td>${esc(r.tanggal || '—')}</td>
                     <td>${esc(r.customer || '—')}</td>
                     <td>${esc(r.sales || '—')}</td>
+                    <td>${esc(r.tipeBayar || '—')}</td>
                     <td class="num">${fmt(r.nominal || 0)}</td>
-                    <td class="num" style="color:var(--red)"><strong>${daysOverdue}+ hari</strong></td>
+                    ${showJt ? '<td class="num" style="color:var(--red)"><strong>' + daysOverdue + '+ hari</strong></td>' : ''}
                 </tr>`;
             });
-            
+
             html += `</tbody></table>`;
             html += `<div style="margin-top:16px;padding:12px;background:var(--accent-soft);border-radius:8px;font-size:0.9rem;">
-                <strong>Total: ${tempoJtRows.length} faktur</strong> — Nominal: <strong>${fmt(tempoJtRows.reduce((s,r) => s + (r.nominal || 0), 0))}</strong>
+                <strong>Total: ${filtered.length} faktur</strong> — Nominal: <strong>${fmt(filtered.reduce((s,r) => s + (r.nominal || 0), 0))}</strong>
             </div>`;
-            
+
             document.getElementById('tempoJtContent').innerHTML = html;
             document.getElementById('tempoJtModal').classList.add('open');
         }
@@ -5232,6 +5255,16 @@
             // Crosscheck bukan lagi Nominal Lunas + Titip. Hitung uang masuk berdasarkan tanggal uang masuk.
             if (!isAnomali && !isNosales) await updateCekReconciliationCards(bulanList);
 
+            // Reset status clickable kartu 1-4 dulu (supaya tidak "nyangkut" dari sub-tab sebelumnya)
+            ['cekCard1', 'cekCard2', 'cekCard3', 'cekCard4'].forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const card = el.parentElement;
+                card.classList.remove('clickable');
+                card.style.cursor = '';
+                card.onclick = null;
+            });
+
             if (isTempo) {
                 const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
                 const nomOd = rows.filter(r => r.statusCek === 'Overdue').reduce((s, r) => s + r.nominal, 0);
@@ -5266,7 +5299,23 @@
                 document.getElementById('cekCard2').textContent = nominal.toLocaleString('id-ID');
                 document.getElementById('cekCard3').textContent = nCash.toLocaleString('id-ID');
                 document.getElementById('cekCard4').textContent = nTempoOd.toLocaleString('id-ID');
-                
+
+                // Buat semua kartu Anomali clickable -> tampil detail fakturnya (mudah dicek)
+                const cekCard1 = document.querySelector('[id="cekCard1"]').parentElement;
+                cekCard1.classList.add('clickable');
+                cekCard1.style.cursor = 'pointer';
+                cekCard1.onclick = () => openCekAnomaliCardModal(rows, 'all');
+
+                const cekCard2 = document.querySelector('[id="cekCard2"]').parentElement;
+                cekCard2.classList.add('clickable');
+                cekCard2.style.cursor = 'pointer';
+                cekCard2.onclick = () => openCekAnomaliCardModal(rows, 'all');
+
+                const cekCard3 = document.querySelector('[id="cekCard3"]').parentElement;
+                cekCard3.classList.add('clickable');
+                cekCard3.style.cursor = 'pointer';
+                cekCard3.onclick = () => openCekAnomaliCardModal(rows, 'cash');
+
                 // Buat kartu Tempo Sudah JT clickable
                 const cekCard4 = document.querySelector('[id="cekCard4"]').parentElement;
                 cekCard4.classList.add('clickable');
