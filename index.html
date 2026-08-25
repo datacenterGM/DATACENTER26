@@ -2244,9 +2244,9 @@
                 <tbody>`;
             
             tempoJtRows.forEach((r, idx) => {
-                const daysOverdue = r.daysOverdue || 0;
+                const daysOverdue = r.umurOverdue || 0;
                 html += `<tr>
-                    <td><strong>${esc(r.faktur || '—')}</strong></td>
+                    <td><strong>${esc(r.noFaktur || '—')}</strong></td>
                     <td>${esc(r.tanggal || '—')}</td>
                     <td>${esc(r.customer || '—')}</td>
                     <td>${esc(r.sales || '—')}</td>
@@ -4244,7 +4244,9 @@
                 // dijumlahkan begitu saja (yang bisa salah kalau ada beberapa
                 // pencatatan cicilan untuk faktur yang sama).
                 const umByFaktur = new Map();
+                let __n1 = 0;
                 for (const r of (allRows || [])) {
+                    if (++__n1 % 800 === 0) await yieldToMain();
                     const fk = String(r.faktur || '').trim();
                     if (!fk) continue;
                     const sec = String(r.section || '').toUpperCase();
@@ -4357,7 +4359,9 @@
                 // status Overdue untuk baris-baris ini -- statusnya Lunas/Titip/Cash.
                 // ------------------------------------------------------------
                 const umByFakturCash = new Map();
+                let __n2 = 0;
                 for (const r of (allRows || [])) {
+                    if (++__n2 % 800 === 0) await yieldToMain();
                     const fk = String(r.faktur || '').trim();
                     if (!fk) continue;
                     const sec = String(r.section || '').toUpperCase();
@@ -4461,7 +4465,9 @@
                 // umFakturNormMap -> key ternormalisasi -> daftar data record UM (untuk fuzzy fallback)
                 const umFakturSet = new Set();
                 const umByFaktur = new Map(); // exact faktur -> agregat record UM (dipakai fuzzy fallback)
+                let __n3 = 0;
                 for (const r of allRows) {
+                    if (++__n3 % 800 === 0) await yieldToMain();
                     const fk = String(r.faktur || '').trim();
                     if (!fk) continue;
                     umFakturSet.add(fk);
@@ -4492,7 +4498,9 @@
                 }
                 // Kelompokkan Data Penjualan per No.Faktur (SEMUA tipe pembayaran, Cash maupun Tempo)
                 const byFaktur = new Map();
+                let __n4 = 0;
                 for (const r of salesRows) {
+                    if (++__n4 % 800 === 0) await yieldToMain();
                     if (isBatalRow(r)) continue; // faktur BATAL tidak lagi dianggap anomali
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
@@ -4593,7 +4601,9 @@
             }
             if (payType === 'CASH') {
                 const byFaktur = new Map();
+                let __n5 = 0;
                 for (const r of allRows) {
+                    if (++__n5 % 800 === 0) await yieldToMain();
                     const sec = String(r.section || '').toUpperCase();
                     if (!sec.includes('DROPPING')) continue;
                     const fk = String(r.faktur || '').trim();
@@ -4661,7 +4671,9 @@
                 }
                 // Pre-index pembayaran Uang Masuk per faktur (sekali jalan, O(n))
                 const umByFaktur = new Map();
+                let __n6 = 0;
                 for (const r of allRows) {
+                    if (++__n6 % 800 === 0) await yieldToMain();
                     const fk = String(r.faktur || '').trim();
                     if (!fk) continue;
                     if (!umByFaktur.has(fk)) {
@@ -4701,7 +4713,9 @@
 
                 // Agregat dari Data Penjualan (bukan Cash)
                 const byFaktur = new Map();
+                let __n7 = 0;
                 for (const r of salesRows) {
+                    if (++__n7 % 800 === 0) await yieldToMain();
                     const fk = String(r.noFaktur || '').trim();
                     if (!fk) continue;
                     if (isCashPay(r.pembayaran)) continue; // skip Cash murni
@@ -5001,7 +5015,9 @@
             // yang paling masuk akal. Pembayaran boleh dicicil ke faktur yang sama; yang tidak boleh
             // adalah satu kelompok pembayaran yang sama dipakai untuk dua faktur.
             const paymentGroups = new Map();
+            let __n8 = 0;
             for (const r of (allRows || [])) {
+                if (++__n8 % 800 === 0) await yieldToMain();
                 if (!r || !inPeriod(r)) continue;
                 const amount = (Number(r.minyakCash) || 0) + (Number(r.minyakTf) || 0) +
                     (Number(r.rupaCash) || 0) + (Number(r.rupaTf) || 0);
@@ -5216,7 +5232,7 @@
             document.getElementById('cekCardLunas').textContent = nomLunas.toLocaleString('id-ID');
             document.getElementById('cekCardTitip').textContent = nomTitip.toLocaleString('id-ID');
             // Crosscheck bukan lagi Nominal Lunas + Titip. Hitung uang masuk berdasarkan tanggal uang masuk.
-            if (!isAnomali && !isNosales) updateCekReconciliationCards(bulanList);
+            if (!isAnomali && !isNosales) await updateCekReconciliationCards(bulanList);
 
             if (isTempo) {
                 const nOd = rows.filter(r => r.statusCek === 'Overdue').length;
