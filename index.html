@@ -933,7 +933,12 @@
                 <div class="muted" style="margin-bottom:10px;font-size:0.8rem;">
                     Atur kata kunci produk (misal <b>400ML</b>, <b>200ML</b>, <b>800ML</b>) dan persentase margin minimal
                     dari <b>Harga Beli</b> (markup). Jika Harga Jual di tabel Transaksi menghasilkan margin di bawah
-                    angka ini, baris akan ditandai ⚠️. Hanya berlaku untuk produk yang mengandung kata <b>FITRI</b>.
+                    angka ini (dikurangi toleransi), baris akan ditandai ⚠️. Hanya berlaku untuk produk yang mengandung kata <b>FITRI</b>.
+                </div>
+                <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+                    <label for="fitriMarginToleransiInput" style="font-size:0.82rem;font-weight:600;">Toleransi selisih Harga Jual (Rp):</label>
+                    <input type="number" id="fitriMarginToleransiInput" step="1" style="width:110px;text-align:right;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);">
+                    <span class="muted" style="font-size:0.75rem;">misal untuk diskon cash pembelian banyak</span>
                 </div>
                 <div style="overflow-x:auto;">
                     <table class="modal-table">
@@ -2777,8 +2782,9 @@
             const marginFlag = computeFitriMarginFlag(r);
             const hargaJualCell = marginFlag
                 ? ('<td class="num" style="color:#dc2626;font-weight:800;" title="Margin ' +
-                    marginFlag.marginPct.toFixed(2) + '% (min ' + marginFlag.minMargin + '%). Minimal Harga Jual: ' +
-                    fmt(Math.ceil(marginFlag.minHargaJual)) + '">' + fmt(r.hargaJual) + ' ⚠️</td>')
+                    marginFlag.marginPct.toFixed(2) + '% (min ' + marginFlag.minMargin + '%). Harga Jual seharusnya min ' +
+                    fmt(Math.ceil(marginFlag.minHargaJual)) + ' (toleransi Rp' + fmt(marginFlag.tolerance) + ', batas bawah ' +
+                    fmt(Math.ceil(marginFlag.batasBawah)) + ')">' + fmt(r.hargaJual) + ' ⚠️</td>')
                 : ('<td class="num">' + fmt(r.hargaJual) + '</td>');
             return '<tr' + (isBatalRow(r) ? ' style="opacity:0.65;"' : (marginFlag ? ' style="background:rgba(220,38,38,.06);"' : '')) + '>' +
                 '<td>' + esc(r.tanggal) + '<br><span class="muted" style="font-size:0.7rem">' + esc(r.sheet) +
@@ -2818,11 +2824,13 @@
 
         // ---- Pengaturan Margin Minimal Fitri (markup dari Harga Beli) ----
         const FITRI_MARGIN_STORAGE_KEY = 'fitriMarginRules';
+        const FITRI_MARGIN_TOLERANCE_KEY = 'fitriMarginTolerance';
         const DEFAULT_FITRI_MARGIN_RULES = [
             { keyword: '400ML', margin: 3.27 },
             { keyword: '200ML', margin: 4.80 },
             { keyword: '800ML', margin: 4.31 }
         ];
+        const DEFAULT_FITRI_MARGIN_TOLERANCE = 2500; // toleransi Rp, misal diskon cash pembelian banyak
 
         function loadFitriMarginRules() {
             try {
@@ -2832,10 +2840,17 @@
             return DEFAULT_FITRI_MARGIN_RULES.slice();
         }
 
+        function loadFitriMarginTolerance() {
+            const saved = Number(localStorage.getItem(FITRI_MARGIN_TOLERANCE_KEY));
+            return isNaN(saved) || localStorage.getItem(FITRI_MARGIN_TOLERANCE_KEY) === null ? DEFAULT_FITRI_MARGIN_TOLERANCE : saved;
+        }
+
         let fitriMarginRules = loadFitriMarginRules();
+        let fitriMarginTolerance = loadFitriMarginTolerance();
 
         function saveFitriMarginRulesToStorage() {
             localStorage.setItem(FITRI_MARGIN_STORAGE_KEY, JSON.stringify(fitriMarginRules));
+            localStorage.setItem(FITRI_MARGIN_TOLERANCE_KEY, String(fitriMarginTolerance));
         }
 
         // Cari aturan margin yang cocok dengan nama produk (kata kunci terpanjang menang)
@@ -2850,7 +2865,8 @@
             return best;
         }
 
-        // Hitung apakah baris produk Fitri ini di bawah margin minimal.
+        // Hitung apakah baris produk Fitri ini di bawah margin minimal (dengan toleransi Rp,
+        // misal untuk diskon pembeli cash yang beli banyak).
         // Margin = (Harga Jual - Harga Beli) / Harga Beli * 100 (markup dari harga beli).
         function computeFitriMarginFlag(r) {
             if (!isFitriProduk(r.produk)) return null;
@@ -2859,15 +2875,19 @@
             const hb = Number(r.hargaBeli) || 0;
             const hj = Number(r.hargaJual) || 0;
             if (hb <= 0) return null;
-            const marginPct = (hj - hb) / hb * 100;
-            if (marginPct < rule.margin) {
-                return { marginPct, minMargin: rule.margin, minHargaJual: hb * (1 + rule.margin / 100) };
+            const minHargaJual = hb * (1 + rule.margin / 100);
+            const batasBawah = minHargaJual - fitriMarginTolerance;
+            if (hj < batasBawah) {
+                const marginPct = (hj - hb) / hb * 100;
+                return { marginPct, minMargin: rule.margin, minHargaJual, batasBawah, tolerance: fitriMarginTolerance };
             }
             return null;
         }
 
         function openFitriMarginModal() {
             fitriMarginRules = loadFitriMarginRules();
+            fitriMarginTolerance = loadFitriMarginTolerance();
+            document.getElementById('fitriMarginToleransiInput').value = fitriMarginTolerance;
             renderFitriMarginRulesBody();
             document.getElementById('fitriMarginModal').classList.add('open');
         }
@@ -2907,7 +2927,9 @@
                 const mg = Number(tr.querySelector('.fm-margin').value);
                 if (kw) rules.push({ keyword: kw, margin: isNaN(mg) ? 0 : mg });
             });
+            const tol = Number(document.getElementById('fitriMarginToleransiInput').value);
             fitriMarginRules = rules;
+            fitriMarginTolerance = isNaN(tol) ? 0 : tol;
             saveFitriMarginRulesToStorage();
             closeFitriMarginModal();
             // Refresh tampilan tabel Transaksi supaya tanda margin ter-update
@@ -3185,7 +3207,8 @@
                     const itMarginFlag = computeFitriMarginFlag(it);
                     const hargaHtml = itMarginFlag
                         ? '<span style="color:#dc2626;font-weight:800;" title="Margin ' + itMarginFlag.marginPct.toFixed(2) +
-                            '% (min ' + itMarginFlag.minMargin + '%). Minimal Harga Jual: ' + fmt(Math.ceil(itMarginFlag.minHargaJual)) + '">' +
+                            '% (min ' + itMarginFlag.minMargin + '%). Harga Jual seharusnya min ' + fmt(Math.ceil(itMarginFlag.minHargaJual)) +
+                            ' (toleransi Rp' + fmt(itMarginFlag.tolerance) + ', batas bawah ' + fmt(Math.ceil(itMarginFlag.batasBawah)) + ')">' +
                             (Number(it.hargaJual) || 0).toLocaleString('id-ID') + ' ⚠️</span>'
                         : (Number(it.hargaJual) || 0).toLocaleString('id-ID');
                     itemsHtml += '<tr>' +
