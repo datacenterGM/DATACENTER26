@@ -1833,7 +1833,9 @@
         let lastFakturFiltered = [];
 
         function renderTable(rows) {
-            lastFakturFiltered = rows || [];
+            // Urutkan tanggal terbaru di paling atas (default tampilan pertama kali dibuka)
+            rows = (rows || []).slice().sort((a, b) => dateSortKey(b.date, b.sheet) - dateSortKey(a.date, a.sheet));
+            lastFakturFiltered = rows;
             resultInfo.style.display = 'block';
             resultInfo.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') + '</strong> dari <strong>' +
                 allRows.length.toLocaleString('id-ID') + '</strong> faktur';
@@ -3081,6 +3083,14 @@
         }
 
         function renderSalesTable(rows) {
+            // Urutkan tanggal terbaru di paling atas (default tampilan pertama kali dibuka)
+            rows = (rows || []).slice().sort((a, b) => {
+                const da = parseSalesDate(a.tanggal);
+                const db = parseSalesDate(b.tanggal);
+                const ta = da instanceof Date && !isNaN(da) ? da.getTime() : 0;
+                const tb = db instanceof Date && !isNaN(db) ? db.getTime() : 0;
+                return tb - ta;
+            });
             salesResultInfo.style.display = 'block';
             salesResultInfo.innerHTML = 'Menampilkan <strong>' + rows.length.toLocaleString('id-ID') +
                 '</strong> dari <strong>' + salesRows.length.toLocaleString('id-ID') + '</strong> transaksi';
