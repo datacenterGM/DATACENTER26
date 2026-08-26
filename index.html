@@ -887,6 +887,7 @@
                         <div class="modal-stat"><div class="l">Sales</div><div class="v" id="cekTempoSales">—</div></div>
                         <div class="modal-stat" style="grid-column:span 2;"><div class="l">Alamat</div><div class="v" id="cekTempoAlamat">—</div></div>
                     </div>
+                    <div id="cekTempoModalProduk" style="margin-bottom:14px;"></div>
                     <div id="cekTempoModalConclusion" style="padding:11px 12px;border:1px solid var(--border);border-radius:9px;background:var(--bg);font-size:.84rem;line-height:1.5;"></div>
                     <div id="cekTempoModalActions" style="margin-top:14px;text-align:right;"></div>
                 </div>
@@ -2038,6 +2039,8 @@
             document.getElementById('cekTempoCustomer').textContent = row.customer || '—';
             document.getElementById('cekTempoSales').textContent = row.sales || '—';
             document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
+            const produkElUM = document.getElementById('cekTempoModalProduk');
+            if (produkElUM) produkElUM.innerHTML = ''; // faktur ini memang tidak ada di Data Penjualan
             let umStatusHtml = '';
             if (row.statusCek === 'Lunas') umStatusHtml = '<span class="badge badge-lunas">LUNAS</span>';
             else if (row.statusCek === 'Titip') umStatusHtml = '<span class="badge badge-titip">TITIP / SEBAGIAN</span>';
@@ -2121,6 +2124,51 @@
             document.getElementById('cekTempoSales').textContent = row.sales || '—';
             document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
 
+            // ---- Rincian Produk (dari Data Penjualan) ----
+            // Diambil langsung dari salesRows (bukan dari salesMap yang sudah
+            // diagregasi), supaya tiap baris produk asli terlihat: kategori
+            // Fitri/Rupa2, Cash/Tempo per baris, dan Sales -- membantu pengecekan
+            // manual faktur Tempo yang overdue.
+            const fakturKeyTempo = normFakturKey(faktur);
+            const produkRowsTempo = (salesRows || []).filter(sr => {
+                const fk = String(sr.noFaktur || '').trim();
+                return fk === faktur || (fakturKeyTempo && normFakturKey(fk) === fakturKeyTempo);
+            });
+            const produkElTempo = document.getElementById('cekTempoModalProduk');
+            if (produkElTempo) {
+                if (produkRowsTempo.length) {
+                    let ph = '<div class="l" style="margin-bottom:6px;font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Rincian Produk (dari Data Penjualan)</div>' +
+                        '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.8rem;">' +
+                        '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">' +
+                        '<th style="padding:5px 6px;">Produk</th><th style="padding:5px 6px;">Kategori</th>' +
+                        '<th style="padding:5px 6px;text-align:right;">Jumlah</th><th style="padding:5px 6px;">Satuan</th>' +
+                        '<th style="padding:5px 6px;text-align:right;">Total</th><th style="padding:5px 6px;">Sales</th>' +
+                        '<th style="padding:5px 6px;">Pembayaran</th></tr></thead><tbody>';
+                    for (const it of produkRowsTempo) {
+                        const kategori = isFitriProduk(it.produk) ? 'Fitri' : 'Rupa2';
+                        const kategoriColor = kategori === 'Fitri' ? 'var(--indigo)' : 'var(--muted)';
+                        const kategoriBg = kategori === 'Fitri' ? 'var(--indigo-bg)' : 'var(--th-bg)';
+                        const payUp = String(it.pembayaran || '').trim().toUpperCase();
+                        const isCashRow = payUp === 'CASH' || payUp.startsWith('CASH') || payUp === 'TUNAI';
+                        const payLabel = it.pembayaran ? (isCashRow ? '💵 Cash' : '📅 Tempo') : '—';
+                        const payColor = isCashRow ? 'var(--green)' : 'var(--accent)';
+                        ph += '<tr style="border-bottom:1px solid var(--border);">' +
+                            '<td style="padding:5px 6px;">' + esc(it.produk || '—') + '</td>' +
+                            '<td style="padding:5px 6px;"><span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:0.68rem;font-weight:700;color:' + kategoriColor + ';background:' + kategoriBg + ';">' + kategori + '</span></td>' +
+                            '<td style="padding:5px 6px;text-align:right;">' + (it.jumlah || 0).toLocaleString('id-ID') + '</td>' +
+                            '<td style="padding:5px 6px;">' + esc(it.satuan || '—') + '</td>' +
+                            '<td style="padding:5px 6px;text-align:right;">' + fmt(it.total || 0) + '</td>' +
+                            '<td style="padding:5px 6px;">' + esc(it.sales || '—') + '</td>' +
+                            '<td style="padding:5px 6px;"><span style="font-weight:700;color:' + payColor + ';">' + payLabel + '</span></td>' +
+                            '</tr>';
+                    }
+                    ph += '</tbody></table></div>';
+                    produkElTempo.innerHTML = ph;
+                } else {
+                    produkElTempo.innerHTML = '<div style="padding:9px 10px;border:1px dashed var(--border);border-radius:8px;font-size:0.78rem;color:var(--muted);">Rincian produk tidak ditemukan di Data Penjualan untuk faktur ini (kemungkinan hasil fuzzy-match dengan No.Faktur berbeda format).</div>';
+                }
+            }
+
             let statusHtml = '';
             if (isLunas) {
                 statusHtml += '<span class="badge badge-lunas">LUNAS</span>';
@@ -2199,6 +2247,41 @@
             document.getElementById('cekTempoCustomer').textContent = row.customer || '—';
             document.getElementById('cekTempoSales').textContent = row.sales || '—';
             document.getElementById('cekTempoAlamat').textContent = row.alamat || '—';
+
+            const produkElAnomali = document.getElementById('cekTempoModalProduk');
+            if (produkElAnomali) {
+                if (details.length) {
+                    let ph = '<div class="l" style="margin-bottom:6px;font-size:0.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Rincian Produk (dari Data Penjualan)</div>' +
+                        '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.8rem;">' +
+                        '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">' +
+                        '<th style="padding:5px 6px;">Produk</th><th style="padding:5px 6px;">Kategori</th>' +
+                        '<th style="padding:5px 6px;text-align:right;">Jumlah</th><th style="padding:5px 6px;">Satuan</th>' +
+                        '<th style="padding:5px 6px;text-align:right;">Total</th><th style="padding:5px 6px;">Sales</th>' +
+                        '<th style="padding:5px 6px;">Pembayaran</th></tr></thead><tbody>';
+                    for (const it of details) {
+                        const kategori = isFitriProduk(it.produk) ? 'Fitri' : 'Rupa2';
+                        const kategoriColor = kategori === 'Fitri' ? 'var(--indigo)' : 'var(--muted)';
+                        const kategoriBg = kategori === 'Fitri' ? 'var(--indigo-bg)' : 'var(--th-bg)';
+                        const payUp = String(it.pembayaran || '').trim().toUpperCase();
+                        const isCashRow = payUp === 'CASH' || payUp.startsWith('CASH') || payUp === 'TUNAI';
+                        const payLabel = it.pembayaran ? (isCashRow ? '💵 Cash' : '📅 Tempo') : '—';
+                        const payColor = isCashRow ? 'var(--green)' : 'var(--accent)';
+                        ph += '<tr style="border-bottom:1px solid var(--border);">' +
+                            '<td style="padding:5px 6px;">' + esc(it.produk || '—') + '</td>' +
+                            '<td style="padding:5px 6px;"><span style="display:inline-block;padding:1px 7px;border-radius:6px;font-size:0.68rem;font-weight:700;color:' + kategoriColor + ';background:' + kategoriBg + ';">' + kategori + '</span></td>' +
+                            '<td style="padding:5px 6px;text-align:right;">' + (it.jumlah || 0).toLocaleString('id-ID') + '</td>' +
+                            '<td style="padding:5px 6px;">' + esc(it.satuan || '—') + '</td>' +
+                            '<td style="padding:5px 6px;text-align:right;">' + fmt(it.total || 0) + '</td>' +
+                            '<td style="padding:5px 6px;">' + esc(it.sales || '—') + '</td>' +
+                            '<td style="padding:5px 6px;"><span style="font-weight:700;color:' + payColor + ';">' + payLabel + '</span></td>' +
+                            '</tr>';
+                    }
+                    ph += '</tbody></table></div>';
+                    produkElAnomali.innerHTML = ph;
+                } else {
+                    produkElAnomali.innerHTML = '';
+                }
+            }
 
             let statusHtml = '<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:0.72rem;font-weight:700;color:#fff;background:' + tipeColor + ';">' +
                 (row.tipeBayar === 'Cash' ? '💵 CASH' : '📅 TEMPO') + '</span>' +
